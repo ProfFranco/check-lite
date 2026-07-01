@@ -23,30 +23,30 @@ function corrigedStudents(exam, students, grades, notesBrutes, palierGrades) {
   });
 }
 
-function calcClassAvg(exam, students, grades, notesBrutes, palierGrades) {
+function calcClassAvg(exam, students, grades, notesBrutes, palierGrades, palierAjust) {
   if (!exam || !students || students.length === 0) return null;
   var presents = corrigedStudents(exam, students, grades, notesBrutes, palierGrades);
   if (presents.length === 0) return null;
   var max = examTotal(exam);
   if (max === 0) return null;
   var sum = 0;
-  presents.forEach(function(s) { sum += noteSur100(studentTotal(grades, notesBrutes, palierGrades, s.id, exam), max); });
+  presents.forEach(function(s) { sum += noteSur100(studentTotal(grades, notesBrutes, palierGrades, palierAjust, s.id, exam), max); });
   return sum / presents.length;
 }
 
-function calcMinMax(exam, students, grades, notesBrutes, palierGrades) {
+function calcMinMax(exam, students, grades, notesBrutes, palierGrades, palierAjust) {
   if (!exam || !students || students.length === 0) return null;
   var max = examTotal(exam);
   if (max === 0) return null;
   var presents = corrigedStudents(exam, students, grades, notesBrutes, palierGrades);
   if (presents.length === 0) return null;
-  var notes = presents.map(function(s) { return noteSur100(studentTotal(grades, notesBrutes, palierGrades, s.id, exam), max); });
+  var notes = presents.map(function(s) { return noteSur100(studentTotal(grades, notesBrutes, palierGrades, palierAjust, s.id, exam), max); });
   return { min: Math.min.apply(null, notes), max: Math.max.apply(null, notes) };
 }
 
 function fmt1(n) { return (Math.round(n * 10) / 10).toFixed(1); }
 
-function AccueilTab({ th, FONT_B, MONO, profiles, activeProfileId, PROFILE_COLORS, exams, students, grades, notesBrutes, palierGrades, setMode, switchProfile, setShowProfileMenu, setActiveExamId, askConfirm, onChangelog, onFullBackup, onOpenRestore, backupBusy }) {
+function AccueilTab({ th, FONT_B, MONO, profiles, activeProfileId, PROFILE_COLORS, exams, students, grades, notesBrutes, palierGrades, palierAjust, setMode, switchProfile, setShowProfileMenu, setActiveExamId, askConfirm, onFullBackup, onOpenRestore, backupBusy }) {
   var _ddOpen = useState(false); var ddOpen = _ddOpen[0]; var setDdOpen = _ddOpen[1];
 
   var profileIndex = profiles.findIndex(function(p) { return p.id === activeProfileId; });
@@ -57,7 +57,7 @@ function AccueilTab({ th, FONT_B, MONO, profiles, activeProfileId, PROFILE_COLOR
   var avgSum = 0;
   var avgCount = 0;
   exams.forEach(function(ex) {
-    var avg = calcClassAvg(ex, students, grades, notesBrutes, palierGrades);
+    var avg = calcClassAvg(ex, students, grades, notesBrutes, palierGrades, palierAjust);
     if (avg !== null) { avgSum += avg; avgCount++; }
   });
   var moyenneGlobale = avgCount > 0 ? avgSum / avgCount : null;
@@ -68,8 +68,8 @@ function AccueilTab({ th, FONT_B, MONO, profiles, activeProfileId, PROFILE_COLOR
   var lastCorriges = lastExam ? countCorriges(lastExam, students, grades, notesBrutes, palierGrades) : 0;
   var tauxCorrection = students.length > 0 ? (lastCorriges / students.length) * 100 : 0;
 
-  var lastAvg = lastExam ? calcClassAvg(lastExam, students, grades, notesBrutes, palierGrades) : null;
-  var lastMM = lastExam ? calcMinMax(lastExam, students, grades, notesBrutes, palierGrades) : null;
+  var lastAvg = lastExam ? calcClassAvg(lastExam, students, grades, notesBrutes, palierGrades, palierAjust) : null;
+  var lastMM = lastExam ? calcMinMax(lastExam, students, grades, notesBrutes, palierGrades, palierAjust) : null;
 
   var cardStyle = { background: th.card, border: "1px solid " + th.border, borderRadius: th.radiusSm, padding: "16px 18px" };
   var labelStyle = { fontSize: 11, color: th.textMuted, fontFamily: FONT_B, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 };
@@ -229,7 +229,7 @@ function AccueilTab({ th, FONT_B, MONO, profiles, activeProfileId, PROFILE_COLOR
           ) : (
             <div style={{ ...cardStyle, padding: 0, overflow: "hidden" }}>
               {prevExams.map(function(ex, i) {
-                var avg = calcClassAvg(ex, students, grades, notesBrutes, palierGrades);
+                var avg = calcClassAvg(ex, students, grades, notesBrutes, palierGrades, palierAjust);
                 var corriges = countCorriges(ex, students, grades, notesBrutes, palierGrades);
                 var isComplete = corriges >= students.length;
                 return (
@@ -274,13 +274,8 @@ function AccueilTab({ th, FONT_B, MONO, profiles, activeProfileId, PROFILE_COLOR
       )}
 
       {/* PIED DE PAGE */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 0", borderTop: "1px solid " + th.border, fontSize: 11, color: th.textDim }}>
+      <div style={{ padding: "12px 0", borderTop: "1px solid " + th.border, fontSize: 11, color: th.textDim }}>
         <span>{"C.H.E.C.K.-lite v" + APP_VERSION}</span>
-        <button
-          onClick={onChangelog}
-          style={{ background: "none", border: "none", cursor: "pointer", fontFamily: FONT_B, fontSize: 11, fontWeight: 600, color: profileColor, padding: 0 }}>
-          {"Voir le CHANGELOG →"}
-        </button>
       </div>
 
       {ddOpen && <div style={{ position: "fixed", inset: 0, zIndex: 110 }} onClick={function() { setDdOpen(false); }} />}

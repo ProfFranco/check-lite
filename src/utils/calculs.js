@@ -49,12 +49,15 @@ export function questionScore(grades, studentId, question) {
 }
 
 /** Barème maximum d'une compétence "par paliers" (le palier le plus haut) */
-function competenceMaxBareme(competence) {
+export function competenceMaxBareme(competence) {
   return (competence.paliers || []).reduce((m, p) => Math.max(m, parseFloat(p.bareme) || 0), 0);
 }
 
-/** Score d'un élève sur un exercice, quel que soit son type : { earned, total } */
-export function exerciseScore(grades, notesBrutes, palierGrades, studentId, exercise) {
+/** Score d'un élève sur un exercice, quel que soit son type : { earned, total }
+ *  Pour les exercices "paliers", palierAjust permet un bonus/malus manuel par
+ *  compétence (studentId__exerciseId__competenceId -> points, +/-), borné entre
+ *  0 et le barème du palier le plus élevé de la compétence. */
+export function exerciseScore(grades, notesBrutes, palierGrades, palierAjust, studentId, exercise) {
   if (exercise.type === "brut") {
     const val = notesBrutes[gradeKey(studentId, exercise.id)];
     return { earned: typeof val === "number" ? val : 0, total: parseFloat(exercise.bareme) || 0 };
@@ -62,10 +65,13 @@ export function exerciseScore(grades, notesBrutes, palierGrades, studentId, exer
   if (exercise.type === "paliers") {
     let earned = 0, total = 0;
     for (const c of (exercise.competences || [])) {
-      total += competenceMaxBareme(c);
+      const maxB = competenceMaxBareme(c);
+      total += maxB;
       const idx = palierGrades[palierKey(studentId, exercise.id, c.id)];
       const p = (typeof idx === "number") ? c.paliers[idx] : null;
-      if (p) earned += parseFloat(p.bareme) || 0;
+      const base = p ? parseFloat(p.bareme) || 0 : 0;
+      const adjust = (palierAjust && palierAjust[palierKey(studentId, exercise.id, c.id)]) || 0;
+      earned += clamp(base + adjust, 0, maxB);
     }
     return { earned, total };
   }
@@ -80,8 +86,8 @@ export function exerciseScore(grades, notesBrutes, palierGrades, studentId, exer
 }
 
 /** Score total brut d'un élève sur l'examen (tous types d'exercice confondus) */
-export function studentTotal(grades, notesBrutes, palierGrades, studentId, exam) {
-  return exam.exercises.reduce((sum, ex) => sum + exerciseScore(grades, notesBrutes, palierGrades, studentId, ex).earned, 0);
+export function studentTotal(grades, notesBrutes, palierGrades, palierAjust, studentId, exam) {
+  return exam.exercises.reduce((sum, ex) => sum + exerciseScore(grades, notesBrutes, palierGrades, palierAjust, studentId, ex).earned, 0);
 }
 
 /** Barème maximum de l'examen (tous types d'exercice confondus) */
@@ -140,18 +146,18 @@ export function remarquesAjustement(remarks, studentId, exam) {
 // ─── Scores par exercice (pour le radar "classement" en Stats) ───
 
 /** % de réussite absolu par exercice */
-export function exercisePctAbsolute(grades, notesBrutes, palierGrades, studentId, exam) {
+export function exercisePctAbsolute(grades, notesBrutes, palierGrades, palierAjust, studentId, exam) {
   return exam.exercises.map(ex => {
-    const s = exerciseScore(grades, notesBrutes, palierGrades, studentId, ex);
+    const s = exerciseScore(grades, notesBrutes, palierGrades, palierAjust, studentId, ex);
     return { id: ex.id, label: ex.title.replace(/^Exercice\s*/i, "Ex.").slice(0, 12), pct: s.total > 0 ? s.earned / s.total : 0 };
   });
 }
 
 /** % relatif par exercice (par rapport au meilleur de la classe) */
-export function exercisePctRelative(grades, notesBrutes, palierGrades, studentId, exam, students) {
+export function exercisePctRelative(grades, notesBrutes, palierGrades, palierAjust, studentId, exam, students) {
   return exam.exercises.map(ex => {
-    const maxScore = Math.max(...students.map(s => exerciseScore(grades, notesBrutes, palierGrades, s.id, ex).earned), 0.001);
-    return { id: ex.id, label: ex.title.replace(/^Exercice\s*/i, "Ex.").slice(0, 12), pct: exerciseScore(grades, notesBrutes, palierGrades, studentId, ex).earned / maxScore };
+    const maxScore = Math.max(...students.map(s => exerciseScore(grades, notesBrutes, palierGrades, palierAjust, s.id, ex).earned), 0.001);
+    return { id: ex.id, label: ex.title.replace(/^Exercice\s*/i, "Ex.").slice(0, 12), pct: exerciseScore(grades, notesBrutes, palierGrades, palierAjust, studentId, ex).earned / maxScore };
   });
 }
 

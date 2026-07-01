@@ -38,9 +38,10 @@ function cellColor(ratio, th) {
 
 // ── Composant principal ──────────────────────────────────────────
 
-function OverviewTab({ exam, students, grades, notesBrutes, palierGrades, th, FONT, FONT_B, MONO, onNavigate }) {
+function OverviewTab({ exam, students, grades, notesBrutes, palierGrades, palierAjust, th, FONT, FONT_B, MONO, onNavigate }) {
   var nb = notesBrutes || {};
   var pg = palierGrades || {};
+  var pa = palierAjust || {};
 
   // États éphémères locaux
   var _granularity = useState("question");
@@ -130,11 +131,11 @@ function OverviewTab({ exam, students, grades, notesBrutes, palierGrades, th, FO
   function getColValue(studentId, col) {
     if (col.type === "question") return questionObtenu(grades, studentId, col.question);
     if (col.type === "item") return itemObtenu(grades, studentId, col.item);
-    return exerciseScore(grades, nb, pg, studentId, col.ex).earned;
+    return exerciseScore(grades, nb, pg, pa, studentId, col.ex).earned;
   }
 
   function getStudentTotal(studentId) {
-    return exam.exercises.reduce(function(sum, ex) { return sum + exerciseScore(grades, nb, pg, studentId, ex).earned; }, 0);
+    return exam.exercises.reduce(function(sum, ex) { return sum + exerciseScore(grades, nb, pg, pa, studentId, ex).earned; }, 0);
   }
 
   var examMax = cols.reduce(function(s, c) { return s + c.max; }, 0);

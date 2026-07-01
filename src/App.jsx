@@ -15,14 +15,13 @@ import {
 } from "./config/settings";
 import { lightTheme, darkTheme, youngTheme, FONT_TITLE, FONT_BODY, FONT_MONO, FONTS_URL } from "./config/theme";
 import {
-  uid, gradeKey, remarkKey, palierKey, clamp,
+  uid, gradeKey, remarkKey, palierKey, clamp, competenceMaxBareme,
   questionScore, exerciseScore, studentTotal, examTotal, noteSur100,
   remarquesAjustement, exercisePctAbsolute, exercisePctRelative,
   importCSV, downloadFile, treatedKey, validateState,
 } from "./utils/calculs";
 import { loadDB, saveDB, loadMeta, saveMeta, initProfiles, profileDBName, openNamedDB } from "./utils/db";
 import { Histo, PBar } from "./components/Charts";
-import HelpTab from "./HelpTab";
 import SauvegardeTab from "./SauvegardeTab";
 import OverviewTab from "./OverviewTab";
 import { collectAllProfiles, restoreReplace, restoreMerge, parseBackup, validateBackup, backupFilename } from "./utils/backup";
@@ -56,6 +55,7 @@ export default function App() {
   var _remarks = useState({}); var setRemarks = _remarks[1]; var remarks = _remarks[0];
   var _notesBrutes = useState({}); var setNotesBrutes = _notesBrutes[1]; var notesBrutes = _notesBrutes[0];
   var _palierGrades = useState({}); var setPalierGrades = _palierGrades[1]; var palierGrades = _palierGrades[0];
+  var _palierAjust = useState({}); var setPalierAjust = _palierAjust[1]; var palierAjust = _palierAjust[0];
   var _activeExamId = useState(null); var setActiveExamId = _activeExamId[1]; var activeExamId = _activeExamId[0];
   var _nomDS = useState(""); var setNomDS = _nomDS[1]; var nomDS = _nomDS[0];
   var _dateDS = useState(""); var setDateDS = _dateDS[1]; var dateDS = _dateDS[0];
@@ -78,9 +78,6 @@ export default function App() {
   var _progressionViewMode = useState("courbe"); var progressionViewMode = _progressionViewMode[0]; var setProgressionViewMode = _progressionViewMode[1];
   var _confirmDelete = useState(null); var setConfirmDelete = _confirmDelete[1]; var confirmDelete = _confirmDelete[0];
   var _confirmImportVide = useState(null); var setConfirmImportVide = _confirmImportVide[1]; var confirmImportVide = _confirmImportVide[0];
-  var _showApropos = useState(false); var setShowApropos = _showApropos[1]; var showApropos = _showApropos[0];
-  var _showChangelog = useState(false); var setShowChangelog = _showChangelog[1]; var showChangelog = _showChangelog[0];
-  var _changelogText = useState(""); var setChangelogText = _changelogText[1]; var changelogText = _changelogText[0];
   var _profiles = useState([]); var setProfiles = _profiles[1]; var profiles = _profiles[0];
   var _activeProfileId = useState(null); var setActiveProfileId = _activeProfileId[1]; var activeProfileId = _activeProfileId[0];
   var _showProfileMenu = useState(false); var setShowProfileMenu = _showProfileMenu[1]; var showProfileMenu = _showProfileMenu[0];
@@ -122,7 +119,7 @@ export default function App() {
   function buildAppState(overrides) {
     return Object.assign({
       exams: exams, students: students, grades: grades, remarks: remarks,
-      notesBrutes: notesBrutes, palierGrades: palierGrades,
+      notesBrutes: notesBrutes, palierGrades: palierGrades, palierAjust: palierAjust,
       activeExamId: activeExamId, nomDS: nomDS, dateDS: dateDS,
       malusManuel: malusManuel, uiScale: uiScale, appTheme: appTheme,
       mode: mode,
@@ -137,6 +134,7 @@ export default function App() {
     if (d.remarks) setRemarks(d.remarks);
     if (d.notesBrutes) setNotesBrutes(d.notesBrutes);
     if (d.palierGrades) setPalierGrades(d.palierGrades);
+    if (d.palierAjust) setPalierAjust(d.palierAjust);
     if (d.activeExamId) setActiveExamId(d.activeExamId);
     if (d.nomDS) setNomDS(d.nomDS);
     if (d.dateDS) setDateDS(d.dateDS);
@@ -154,7 +152,7 @@ export default function App() {
       saveDB(buildAppState(), activeProfileId);
     }, 500);
     return function() { clearTimeout(timer); };
-  }, [dbLoaded, exams, students, grades, remarks, notesBrutes, palierGrades, activeExamId, nomDS, dateDS, malusManuel, uiScale, appTheme, mode]);
+  }, [dbLoaded, exams, students, grades, remarks, notesBrutes, palierGrades, palierAjust, activeExamId, nomDS, dateDS, malusManuel, uiScale, appTheme, mode]);
 
   useEffect(function() { if (showSearch && searchInputRef.current) searchInputRef.current.focus(); }, [showSearch]);
   useEffect(function() { var t = setTimeout(function() { setSplash(false); }, 2000); return function() { clearTimeout(t); }; }, []);
@@ -298,12 +296,12 @@ export default function App() {
     if (!exam || !corriges.length) return { map: {} };
     var map = {};
     corriges.forEach(function(st) {
-      var brut = studentTotal(grades, notesBrutes, palierGrades, st.id, exam);
+      var brut = studentTotal(grades, notesBrutes, palierGrades, palierAjust, st.id, exam);
       var adjust = remarquesAjustement(remarks, st.id, exam) + (malusManuel[st.id] || 0);
       map[st.id] = { brut: brut, adjust: adjust, final: Math.max(0, brut + adjust) };
     });
     return { map: map };
-  }, [exam, corriges, grades, notesBrutes, palierGrades, remarks, malusManuel]);
+  }, [exam, corriges, grades, notesBrutes, palierGrades, palierAjust, remarks, malusManuel]);
 
   function getFinalPts(sid) { var e = scoreData.map[sid]; return e ? e.final : 0; }
   function getBrutPts(sid) { var e = scoreData.map[sid]; return e ? e.brut : 0; }
@@ -325,7 +323,7 @@ export default function App() {
   function saveJSON() {
     var today = new Date(); var dd = String(today.getFullYear()) + "-" + String(today.getMonth()+1).padStart(2,"0") + "-" + String(today.getDate()).padStart(2,"0");
     var slug = (examNomDS || "data").replace(/\s+/g, "_");
-    downloadFile(JSON.stringify({ exams: exams, students: students, grades: grades, remarks: remarks, notesBrutes: notesBrutes, palierGrades: palierGrades, nomDS: examNomDS, dateDS: examDateDS, uiScale: uiScale, malusManuel: malusManuel }, null, 2), "check_" + slug + "_" + dd + ".json", "application/json");
+    downloadFile(JSON.stringify({ exams: exams, students: students, grades: grades, remarks: remarks, notesBrutes: notesBrutes, palierGrades: palierGrades, palierAjust: palierAjust, nomDS: examNomDS, dateDS: examDateDS, uiScale: uiScale, malusManuel: malusManuel }, null, 2), "check_" + slug + "_" + dd + ".json", "application/json");
   }
 
   // ─── Sauvegarde complète multi-profils (filet universel P2-a) ──
@@ -575,6 +573,17 @@ export default function App() {
       return next;
     });
   }
+  // Bonus/malus manuel par compétence — borné à [0, barème du palier le plus haut]
+  function setPalierAjustment(studentId, exerciseId, competenceId, val) {
+    setPalierAjust(function(prev) {
+      var key = palierKey(studentId, exerciseId, competenceId);
+      var next = Object.assign({}, prev);
+      var parsed = parseFloat(val);
+      if (val === "" || isNaN(parsed) || parsed === 0) { delete next[key]; return next; }
+      next[key] = parsed;
+      return next;
+    });
+  }
   function toggleRemark(studentId, targetId, remarkId) {
     setRemarks(function(prev) {
       var key = remarkKey(studentId, targetId);
@@ -639,9 +648,9 @@ export default function App() {
     }
   }, [students, progressionStudentId]);
   var exCur = exam && exam.exercises[ei] ? exam.exercises[ei] : null;
-  var stuTot = exam ? studentTotal(grades, notesBrutes, palierGrades, s.id, exam) : 0;
-  var eAbsVals = exam ? exercisePctAbsolute(grades, notesBrutes, palierGrades, s.id, exam) : [];
-  var eRelVals = exam ? exercisePctRelative(grades, notesBrutes, palierGrades, s.id, exam, students) : [];
+  var stuTot = exam ? studentTotal(grades, notesBrutes, palierGrades, palierAjust, s.id, exam) : 0;
+  var eAbsVals = exam ? exercisePctAbsolute(grades, notesBrutes, palierGrades, palierAjust, s.id, exam) : [];
+  var eRelVals = exam ? exercisePctRelative(grades, notesBrutes, palierGrades, palierAjust, s.id, exam, students) : [];
   var curBrut = stuTot;
   var remAdjust = exam ? remarquesAjustement(remarks, s.id, exam) : 0;
   var manMalus = malusManuel[s.id] || 0;
@@ -868,17 +877,6 @@ export default function App() {
                   title={t.v}>{t.ic}</button>;
               })}
             </div>
-            {/* Aide */}
-            <button onClick={function() { setMode("aide"); setShowMore(false); }}
-              style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "9px 14px", background: mode === "aide" ? th.accentBg : "transparent", border: "none", cursor: "pointer", fontFamily: FONT_B, fontSize: 12, color: mode === "aide" ? th.accent : th.textMuted, textAlign: "left" }}>
-              {"ℹ️"} <span>{"Aide"}</span>
-            </button>
-            {/* À propos */}
-            <button onClick={function() { setShowApropos(true); setShowMore(false); }}
-              style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "9px 14px", background: "transparent", border: "none", cursor: "pointer", fontFamily: FONT_B, fontSize: 12, color: th.textMuted, textAlign: "left" }}>
-              {"❓"} <span>{"À propos"}</span>
-            </button>
-
           </div>}
         </div>
         <input ref={fileRef} type="file" accept=".json" onChange={loadJSONFile} style={{ display: "none" }} />
@@ -1089,7 +1087,7 @@ export default function App() {
             {/* Note par exercice — intégrée au héros, bien lisible */}
             <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 10, paddingTop: 10, borderTop: "1px solid " + th.border }}>
               {exam.exercises.map(function(x) {
-                var sc = exerciseScore(grades, notesBrutes, palierGrades, s.id, x);
+                var sc = exerciseScore(grades, notesBrutes, palierGrades, palierAjust, s.id, x);
                 return (
                   <div key={x.id} style={{ fontSize: 13, fontFamily: FONT_B, color: th.text }}>
                     <span style={{ fontWeight: 700 }}>{x.title}</span>{" "}
@@ -1115,7 +1113,7 @@ export default function App() {
           {/* Exercise tabs */}
           <div style={{ display: "flex", gap: 3, marginBottom: 8 }}>
             {exam.exercises.map(function(x, i) {
-              var sc = exerciseScore(grades, notesBrutes, palierGrades, s.id, x);
+              var sc = exerciseScore(grades, notesBrutes, palierGrades, palierAjust, s.id, x);
               return (
                 <button key={x.id} onClick={function() { setEi(i); setQi(0); }} style={{ flex: 1, padding: "6px 3px", borderRadius: th.radiusSm, cursor: "pointer", fontFamily: FONT_B, fontSize: 10, fontWeight: 600, background: i === ei ? th.accent + "15" : "transparent", border: "1.5px solid " + (i === ei ? th.accent + "50" : th.border), color: i === ei ? th.accent : th.textMuted }}>
                   <div>{x.title.length > 20 ? x.title.slice(0, 18) + "…" : x.title}</div>
@@ -1153,10 +1151,15 @@ export default function App() {
             var comp = (exCur.competences || [])[qi];
             if (!comp) return null;
             var sel = palierGrades[palierKey(s.id, exCur.id, comp.id)];
+            var maxB = competenceMaxBareme(comp);
+            var base = (typeof sel === "number" && comp.paliers[sel]) ? (parseFloat(comp.paliers[sel].bareme) || 0) : 0;
+            var ajustKey = palierKey(s.id, exCur.id, comp.id);
+            var ajust = palierAjust[ajustKey] || 0;
+            var adjusted = clamp(base + ajust, 0, maxB);
             return (
               <div style={{ background: th.card, borderRadius: th.radius, border: "1px solid " + th.border, padding: 14, marginBottom: 6, boxShadow: th.shadow }}>
                 <div style={{ fontSize: 15, fontWeight: 700, color: th.text, marginBottom: 10, fontFamily: FONT }}>{comp.label}</div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 10 }}>
                   {comp.paliers.map(function(p, pIdx) {
                     var isSel = sel === pIdx;
                     return (
@@ -1169,6 +1172,14 @@ export default function App() {
                     );
                   })}
                 </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, paddingTop: 8, borderTop: "1px solid " + th.border }}>
+                  <span style={{ fontSize: 12, color: th.textMuted, fontFamily: FONT_B }}>{"Bonus/malus (pts) :"}</span>
+                  <input type="number" step="0.5" value={ajust || ""}
+                    onChange={function(e) { setPalierAjustment(s.id, exCur.id, comp.id, e.target.value); }}
+                    style={{ background: th.surface, border: "1px solid " + th.border, color: th.text, borderRadius: 4, width: 60, textAlign: "center", fontFamily: MONO, fontSize: 13, padding: "4px 6px", outline: "none" }} />
+                  <div style={{ flex: 1 }} />
+                  <span style={{ fontSize: 13, fontFamily: MONO, fontWeight: 700, color: th.accent }}>{adjusted + " / " + maxB}</span>
+                </div>
               </div>
             );
           })()}
@@ -1180,11 +1191,17 @@ export default function App() {
                   <tr>
                     <th style={{ textAlign: "left", fontSize: 11, color: th.textMuted, padding: "4px 6px" }}>{"Compétence"}</th>
                     {[0, 1, 2, 3].map(function(pIdx) { return <th key={pIdx} style={{ fontSize: 11, color: th.textMuted, padding: "4px 6px" }}>{"Palier " + (pIdx + 1)}</th>; })}
+                    <th style={{ fontSize: 11, color: th.textMuted, padding: "4px 6px" }}>{"Bonus/malus"}</th>
+                    <th style={{ fontSize: 11, color: th.textMuted, padding: "4px 6px" }}>{"Score"}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {(exCur.competences || []).map(function(comp) {
                     var sel = palierGrades[palierKey(s.id, exCur.id, comp.id)];
+                    var maxB = competenceMaxBareme(comp);
+                    var base = (typeof sel === "number" && comp.paliers[sel]) ? (parseFloat(comp.paliers[sel].bareme) || 0) : 0;
+                    var ajust = palierAjust[palierKey(s.id, exCur.id, comp.id)] || 0;
+                    var adjusted = clamp(base + ajust, 0, maxB);
                     return (
                       <tr key={comp.id}>
                         <td style={{ fontSize: 12, fontWeight: 600, color: th.text, padding: "4px 6px", whiteSpace: "nowrap" }}>{comp.label}</td>
@@ -1200,6 +1217,12 @@ export default function App() {
                             </td>
                           );
                         })}
+                        <td style={{ padding: "3px 6px", textAlign: "center" }}>
+                          <input type="number" step="0.5" value={ajust || ""}
+                            onChange={function(e) { setPalierAjustment(s.id, exCur.id, comp.id, e.target.value); }}
+                            style={{ background: th.surface, border: "1px solid " + th.border, color: th.text, borderRadius: 4, width: 50, textAlign: "center", fontFamily: MONO, fontSize: 11, padding: "3px 4px", outline: "none" }} />
+                        </td>
+                        <td style={{ padding: "3px 6px", textAlign: "center", fontFamily: MONO, fontWeight: 700, fontSize: 12, color: th.accent }}>{adjusted + "/" + maxB}</td>
                       </tr>
                     );
                   })}
@@ -1351,7 +1374,7 @@ export default function App() {
           </div>}
           {tab === "exercices" && exam.exercises.map(function(exx, i) {
             var isItems = !exx.type || exx.type === "items";
-            var scores = corriges.map(function(s) { return exerciseScore(grades, notesBrutes, palierGrades, s.id, exx); });
+            var scores = corriges.map(function(s) { return exerciseScore(grades, notesBrutes, palierGrades, palierAjust, s.id, exx); });
             var exT = scores.length ? scores[0].total : (exx.type === "brut" ? (parseFloat(exx.bareme) || 0) : 0);
             var enotes = scores.map(function(sc) { return sc.earned; }).sort(function(a, b) { return a - b; });
             var copies = corriges.filter(function(s) {
@@ -1429,6 +1452,7 @@ export default function App() {
               grades={grades}
               notesBrutes={notesBrutes}
               palierGrades={palierGrades}
+              palierAjust={palierAjust}
               th={th}
               FONT={FONT}
               FONT_B={FONT_B}
@@ -1437,9 +1461,6 @@ export default function App() {
             />
           );
         })()}
-
-        {/* ═══ AIDE ═══ */}
-        {mode === "aide" && <HelpTab th={th} FONT={FONT} FONT_B={FONT_B} MONO={MONO} />}
 
         {/* ═══ SAUVEGARDE ═══ */}
         {mode === "sauvegarde" && <SauvegardeTab
@@ -1460,18 +1481,12 @@ export default function App() {
             grades={grades}
             notesBrutes={notesBrutes}
             palierGrades={palierGrades}
+            palierAjust={palierAjust}
             setMode={setMode}
             switchProfile={switchProfile}
             setShowProfileMenu={setShowProfileMenu}
             setActiveExamId={setActiveExamId}
             askConfirm={askConfirm}
-            onChangelog={function() {
-              if (!changelogText) {
-                fetch(process.env.PUBLIC_URL + "/CHANGELOG.md").then(function(r) { return r.text(); }).then(function(t) { setChangelogText(t); }).catch(function() { setChangelogText("_(changelog non disponible)_"); });
-              }
-              setShowApropos(true);
-              setShowChangelog(true);
-            }}
             onFullBackup={saveFullBackup}
             onOpenRestore={function() { backupFileRef.current && backupFileRef.current.click(); }}
             backupBusy={backupBusy}
@@ -1588,46 +1603,6 @@ export default function App() {
     </div>
   </div>
 )}
-
-{/* MODAL À PROPOS */}
-{showApropos && <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={function() { setShowApropos(false); }}>
-        <div style={{ background: th.card, borderRadius: 12, border: "1px solid " + th.border, padding: "28px 32px", width: showChangelog ? 580 : 360, maxWidth: "95vw", transition: "width 0.2s", boxShadow: "0 8px 32px rgba(0,0,0,0.2)", textAlign: "center" }} onClick={function(e) { e.stopPropagation(); }}>
-          <div style={{ fontSize: 13, fontFamily: MONO, color: th.textDim, marginBottom: 4, letterSpacing: 2 }}>{"v\u00A0" + APP_VERSION}</div>
-          <div style={{ fontSize: 26, fontWeight: 700, fontFamily: FONT, color: th.text, marginBottom: 6 }}>{"C.H.E.C.K."}</div>
-          <div style={{ fontSize: 11, color: th.textMuted, fontFamily: FONT_B, lineHeight: 1.6, marginBottom: 20 }}>
-            {"Correcteur Hautement Efficace avec Cases à Kocher"}
-            <br />
-            {"Application de correction de copies et de génération de rapports individuels, conçue pour les enseignants."}
-          </div>
-          <button onClick={function() {
-            if (!changelogText) {
-              fetch(process.env.PUBLIC_URL + "/CHANGELOG.md").then(function(r) { return r.text(); }).then(function(t) { setChangelogText(t); }).catch(function() { setChangelogText("_(changelog non disponible)_"); });
-            }
-            setShowChangelog(!showChangelog);
-          }} style={{ width: "100%", padding: "9px", borderRadius: th.radiusSm, cursor: "pointer", fontFamily: FONT_B, fontSize: 12, fontWeight: 700, background: th.accentBg, border: "1px solid " + th.accent + "30", color: th.accent, marginBottom: 8 }}>
-            {"📋 Nouveautés récentes"}
-          </button>
-          {showChangelog && <div style={{ textAlign: "left", background: th.surface, border: "1px solid " + th.border, borderRadius: th.radiusSm, padding: "10px 14px", marginBottom: 8, maxHeight: 260, overflowY: "auto", fontSize: 12, fontFamily: FONT_B, color: th.text, lineHeight: 1.7 }}>
-            {changelogText.split("\n").map(function(line, i) {
-              var inlineBold = function(s) {
-                var parts = s.split(/\*\*(.+?)\*\*/g);
-                return parts.map(function(p, j) { return j % 2 === 1 ? <strong key={j}>{p}</strong> : p; });
-              };
-              if (line.startsWith("### ")) return <div key={i} style={{ fontWeight: 700, color: th.accent, marginTop: 6, marginBottom: 1 }}>{line.slice(4)}</div>;
-              if (line.startsWith("## "))  return <div key={i} style={{ fontWeight: 700, fontSize: 13, color: th.text, marginTop: 10, marginBottom: 2 }}>{line.slice(3)}</div>;
-              if (line.startsWith("- "))   return <div key={i} style={{ paddingLeft: 12 }}>{"• "}{inlineBold(line.slice(2))}</div>;
-              if (line.trim() === "" || line.trim() === "---") return <div key={i} style={{ height: 4 }} />;
-              return <div key={i}>{inlineBold(line)}</div>;
-            })}
-          </div>}
-          <button onClick={function() { setShowApropos(false); setMode("aide"); }} style={{ width: "100%", padding: "9px", borderRadius: th.radiusSm, cursor: "pointer", fontFamily: FONT_B, fontSize: 12, fontWeight: 700, background: th.surface, border: "1px solid " + th.border, color: th.textMuted, marginBottom: 8 }}>
-            {"ℹ️ Ouvrir le guide d'utilisation"}
-          </button>
-          <button onClick={function() { setShowApropos(false); }} style={{ width: "100%", padding: "9px", borderRadius: th.radiusSm, cursor: "pointer", fontFamily: FONT_B, fontSize: 13, fontWeight: 700, background: th.accent, border: "none", color: "#fff" }}>
-            {"Fermer"}
-          </button>
-        </div>
-      </div>}
 
 
       {/* MOBILE BOTTOM NAV */}
