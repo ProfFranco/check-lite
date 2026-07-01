@@ -1,46 +1,23 @@
 // ═══════════════════════════════════════════════════════════════════
-// OverviewTab — Vue d'ensemble du DS (Session R)
+// OverviewTab — Vue d'ensemble du DS
 // ═══════════════════════════════════════════════════════════════════
 //
-// Tableau élèves × questions (ou items) avec code couleur de réussite.
+// Tableau élèves × questions/items (exercices "items") ou note unique
+// (exercices "brut"/"paliers") avec code couleur de réussite.
 // Aucune persistance : tout l'état est éphémère.
-//
-// Props :
-//   exam          — objet DS actif
-//   students      — tableau de tous les élèves
-//   grades        — objet { "studentId__itemId": true }
-//   absents       — objet { "studentId": true }
-//   th, FONT, FONT_B, MONO
-//   onNavigate(studentIndex, exerciseIndex) — callback vers Correction
-//
-// Usage dans App.jsx :
-//   {mode === "overview" && exam && (
-//     <OverviewTab
-//       exam={exam} students={students} grades={grades} absents={absents}
-//       th={th} FONT={FONT} FONT_B={FONT_B} MONO={MONO}
-//       onNavigate={function(si, ei) { setSi(si); setEi(ei); setMode("correct"); }}
-//     />
-//   )}
 // ═══════════════════════════════════════════════════════════════════
 
 import { useState, useRef } from "react";
-
-// ── Fonctions utilitaires locales ────────────────────────────────
-
-// Clé de note d'un item
-function gk(studentId, itemId) { return studentId + "__" + itemId; }
-
-// Clé de case "traitée 0 pt"
-function treatedKey(studentId, questionId) { return "treated_" + studentId + "_" + questionId; }
+import { gradeKey, palierKey, treatedKey, exerciseScore } from "./utils/calculs";
 
 // Points obtenus par un étudiant sur une question
 function questionObtenu(grades, studentId, question) {
   return (question.items || []).reduce(function(s, it) {
-    return s + (grades[gk(studentId, it.id)] ? (parseFloat(it.points) || 0) : 0);
+    return s + (grades[gradeKey(studentId, it.id)] ? (parseFloat(it.points) || 0) : 0);
   }, 0);
 }
 
-// Points max d'une question (hors bonus — on les inclut quand même ici)
+// Points max d'une question
 function questionMax(question) {
   return (question.items || []).reduce(function(s, it) {
     return s + (parseFloat(it.points) || 0);
@@ -49,7 +26,7 @@ function questionMax(question) {
 
 // Points obtenus par un étudiant sur un item
 function itemObtenu(grades, studentId, item) {
-  return grades[gk(studentId, item.id)] ? (parseFloat(item.points) || 0) : 0;
+  return grades[gradeKey(studentId, item.id)] ? (parseFloat(item.points) || 0) : 0;
 }
 
 // Couleur de cellule selon ratio (0..1)
@@ -61,7 +38,10 @@ function cellColor(ratio, th) {
 
 // ── Composant principal ──────────────────────────────────────────
 
-function OverviewTab({ exam, students, grades, absents, th, FONT, FONT_B, MONO, onNavigate }) {
+function OverviewTab({ exam, students, grades, notesBrutes, palierGrades, th, FONT, FONT_B, MONO, onNavigate }) {
+  var nb = notesBrutes || {};
+  var pg = palierGrades || {};
+
   // États éphémères locaux
   var _granularity = useState("question");
   var granularity = _granularity[0]; var setGranularity = _granularity[1];
@@ -69,13 +49,22 @@ function OverviewTab({ exam, students, grades, absents, th, FONT, FONT_B, MONO, 
   var _sort = useState({ col: null, dir: "none" });
   var sort = _sort[0]; var setSort = _sort[1];
   var _hideUncorrected = useState(false); var hideUncorrected = _hideUncorrected[0]; var setHideUncorrected = _hideUncorrected[1];
-  // Détecte si un élève a au moins une note ou une question traitée
+
+  // Détecte si un élève a au moins une note saisie sur ce DS (tous types d'exercice)
   function isStudentCorrected(studentId) {
     for (var exz of exam.exercises) {
-      for (var qz of exz.questions) {
-        if (grades["treated_" + studentId + "_" + qz.id]) return true;
-        for (var itz of qz.items) {
-          if (grades[studentId + "__" + itz.id]) return true;
+      if (exz.type === "brut") {
+        if (typeof nb[gradeKey(studentId, exz.id)] === "number") return true;
+      } else if (exz.type === "paliers") {
+        for (var cz of (exz.competences || [])) {
+          if (typeof pg[palierKey(studentId, exz.id, cz.id)] === "number") return true;
+        }
+      } else {
+        for (var qz of exz.questions) {
+          if (grades[treatedKey(studentId, qz.id)]) return true;
+          for (var itz of qz.items) {
+            if (grades[gradeKey(studentId, itz.id)]) return true;
+          }
         }
       }
     }
@@ -85,26 +74,33 @@ function OverviewTab({ exam, students, grades, absents, th, FONT, FONT_B, MONO, 
   // Refs pour scroll vers exercice
   var exRefs = useRef({});
 
-  // Élèves présents uniquement
-  var presents = students.filter(function(s) { return !absents[s.id]; });
+  var presents = students;
 
   if (!presents.length) {
     return (
       <div style={{ textAlign: "center", padding: 40, color: th.textMuted, fontFamily: FONT_B }}>
-        {"Aucun élève présent à corriger."}
+        {"Aucun élève à corriger."}
       </div>
     );
   }
 
   // ── Colonnes selon granularité ───────────────────────────────
-  // cols = [{ id, label, exIdx, qIdx, itemIdx?, questionId, max, type }]
+  // cols = [{ id, label, exIdx, max, type: "question"|"item"|"brut"|"paliers", ... }]
   var cols = [];
   exam.exercises.forEach(function(ex, exIdx) {
+    if (ex.type === "brut") {
+      cols.push({ id: "brut_" + ex.id, label: ex.title, exIdx: exIdx, max: parseFloat(ex.bareme) || 0, type: "brut", ex: ex });
+      return;
+    }
+    if (ex.type === "paliers") {
+      cols.push({ id: "paliers_" + ex.id, label: ex.title, exIdx: exIdx, max: (ex.competences || []).reduce(function(s, c) { return s + c.paliers.reduce(function(m, p) { return Math.max(m, parseFloat(p.bareme) || 0); }, 0); }, 0), type: "paliers", ex: ex });
+      return;
+    }
     ex.questions.forEach(function(q, qIdx) {
       if (granularity === "question") {
         cols.push({
           id: "q_" + q.id,
-          label: "Q." + q.label + (q.bonus ? " 🎁" : ""),
+          label: "Q." + q.label,
           exIdx: exIdx,
           qIdx: qIdx,
           questionId: q.id,
@@ -113,7 +109,7 @@ function OverviewTab({ exam, students, grades, absents, th, FONT, FONT_B, MONO, 
           type: "question",
         });
       } else {
-        (q.items || []).forEach(function(it, iIdx) {
+        (q.items || []).forEach(function(it) {
           cols.push({
             id: "i_" + it.id,
             label: (it.label || "item") + " (" + (parseFloat(it.points) || 0) + "pt)",
@@ -132,34 +128,16 @@ function OverviewTab({ exam, students, grades, absents, th, FONT, FONT_B, MONO, 
 
   // ── Calcul des données par élève ─────────────────────────────
   function getColValue(studentId, col) {
-    if (col.type === "question") {
-      return questionObtenu(grades, studentId, col.question);
-    } else {
-      return itemObtenu(grades, studentId, col.item);
-    }
+    if (col.type === "question") return questionObtenu(grades, studentId, col.question);
+    if (col.type === "item") return itemObtenu(grades, studentId, col.item);
+    return exerciseScore(grades, nb, pg, studentId, col.ex).earned;
   }
 
   function getStudentTotal(studentId) {
-    var total = 0;
-    exam.exercises.forEach(function(ex) {
-      ex.questions.forEach(function(q) {
-        total += questionObtenu(grades, studentId, q);
-      });
-    });
-    return total;
+    return exam.exercises.reduce(function(sum, ex) { return sum + exerciseScore(grades, nb, pg, studentId, ex).earned; }, 0);
   }
 
-  function getExamMax() {
-    var max = 0;
-    exam.exercises.forEach(function(ex) {
-      ex.questions.forEach(function(q) {
-        if (!q.bonus) max += questionMax(q);
-      });
-    });
-    return max;
-  }
-
-  var examMax = getExamMax();
+  var examMax = cols.reduce(function(s, c) { return s + c.max; }, 0);
 
   // ── Tri ──────────────────────────────────────────────────────
   function handleColClick(colId) {
@@ -183,17 +161,15 @@ function OverviewTab({ exam, students, grades, absents, th, FONT, FONT_B, MONO, 
     : presents;
   var sortedStudents = filteredPresents.slice().sort(function(a, b) {
     if (sort.col === null || sort.dir === "none") {
-      // Tri alphabétique par défaut
       var na = (a.nom + a.prenom).toLowerCase();
-      var nb = (b.nom + b.prenom).toLowerCase();
-      return na < nb ? -1 : na > nb ? 1 : 0;
+      var nb2 = (b.nom + b.prenom).toLowerCase();
+      return na < nb2 ? -1 : na > nb2 ? 1 : 0;
     }
     if (sort.col === "nom") {
       var na2 = (a.nom + a.prenom).toLowerCase();
-      var nb2 = (b.nom + b.prenom).toLowerCase();
-      return sort.dir === "asc" ? (na2 < nb2 ? -1 : 1) : (na2 > nb2 ? -1 : 1);
+      var nb3 = (b.nom + b.prenom).toLowerCase();
+      return sort.dir === "asc" ? (na2 < nb3 ? -1 : 1) : (na2 > nb3 ? -1 : 1);
     }
-    // Tri par colonne question/item
     var col = cols.find(function(c) { return c.id === sort.col; });
     if (!col) return 0;
     var va = col.max > 0 ? getColValue(a.id, col) / col.max : 0;
@@ -202,42 +178,25 @@ function OverviewTab({ exam, students, grades, absents, th, FONT, FONT_B, MONO, 
   });
 
   // ── Groupement des colonnes par exercice ─────────────────────
-  // Pour l'en-tête fusionné niveau 1
   var exGroups = exam.exercises.map(function(ex, exIdx) {
     var exCols = cols.filter(function(c) { return c.exIdx === exIdx; });
     return { ex: ex, exIdx: exIdx, count: exCols.length };
   });
 
-  // ── Scroll vers un exercice ───────────────────────────────────
   function scrollToEx(exIdx) {
     var el = exRefs.current[exIdx];
     if (el) el.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "start" });
   }
 
-  // ── Styles communs ─────────────────────────────────────────────
   var thBase = {
-    padding: "5px 8px",
-    fontFamily: FONT_B,
-    fontSize: 10,
-    fontWeight: 700,
-    whiteSpace: "nowrap",
-    userSelect: "none",
-    borderBottom: "2px solid " + th.border,
-    background: th.surface,
-    color: th.textMuted,
-    position: "sticky",
-    top: 0,
-    zIndex: 3,
+    padding: "5px 8px", fontFamily: FONT_B, fontSize: 10, fontWeight: 700,
+    whiteSpace: "nowrap", userSelect: "none", borderBottom: "2px solid " + th.border,
+    background: th.surface, color: th.textMuted, position: "sticky", top: 0, zIndex: 3,
   };
 
   var tdBase = {
-    padding: "4px 6px",
-    fontFamily: MONO,
-    fontSize: 11,
-    textAlign: "center",
-    borderBottom: "1px solid " + th.border + "44",
-    whiteSpace: "nowrap",
-    cursor: "pointer",
+    padding: "4px 6px", fontFamily: MONO, fontSize: 11, textAlign: "center",
+    borderBottom: "1px solid " + th.border + "44", whiteSpace: "nowrap", cursor: "pointer",
   };
 
   var sortArrow = function(colId) {
@@ -249,52 +208,28 @@ function OverviewTab({ exam, students, grades, absents, th, FONT, FONT_B, MONO, 
     <div style={{ maxWidth: "100%", margin: "0 auto" }}>
 
       {/* ── Barre de contrôles ─────────────────────────────────── */}
-      <div style={{
-        display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap",
-        marginBottom: 10, padding: "10px 14px",
-        background: th.card, borderRadius: th.radius, border: "1px solid " + th.border,
-        boxShadow: th.shadow,
-      }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 10, padding: "10px 14px", background: th.card, borderRadius: th.radius, border: "1px solid " + th.border, boxShadow: th.shadow }}>
         <span style={{ fontSize: 14, fontWeight: 700, fontFamily: FONT, flex: 1 }}>
           {"📋 Vue d'ensemble — " + (exam.nomDS || exam.name || "DS")}
         </span>
 
-        {/* Toggle granularité */}
         <div style={{ display: "flex", gap: 2 }}>
           {[{ v: "question", l: "☰ Questions" }, { v: "item", l: "⊞ Items" }].map(function(g) {
             var active = granularity === g.v;
             return (
               <button key={g.v} onClick={function() { setGranularity(g.v); }}
-                style={{
-                  padding: "5px 10px", borderRadius: th.radiusSm, cursor: "pointer",
-                  fontFamily: FONT_B, fontSize: 11, fontWeight: 600,
-                  background: active ? th.accentBg : th.surface,
-                  border: "1px solid " + (active ? th.accent + "55" : th.border),
-                  color: active ? th.accent : th.textMuted,
-                }}>{g.l}</button>
+                style={{ padding: "5px 10px", borderRadius: th.radiusSm, cursor: "pointer", fontFamily: FONT_B, fontSize: 11, fontWeight: 600, background: active ? th.accentBg : th.surface, border: "1px solid " + (active ? th.accent + "55" : th.border), color: active ? th.accent : th.textMuted }}>{g.l}</button>
             );
           })}
         </div>
 
-        {/* Toggle corrigés seulement */}
         <button
           onClick={function() { setHideUncorrected(function(v) { return !v; }); }}
-          style={{
-            padding: "5px 10px", borderRadius: th.radiusSm, cursor: "pointer",
-            fontFamily: FONT_B, fontSize: 11, fontWeight: 600,
-            background: hideUncorrected ? th.accentBg : th.surface,
-            border: "1px solid " + (hideUncorrected ? th.accent + "55" : th.border),
-            color: hideUncorrected ? th.accent : th.textMuted,
-          }}>
+          style={{ padding: "5px 10px", borderRadius: th.radiusSm, cursor: "pointer", fontFamily: FONT_B, fontSize: 11, fontWeight: 600, background: hideUncorrected ? th.accentBg : th.surface, border: "1px solid " + (hideUncorrected ? th.accent + "55" : th.border), color: hideUncorrected ? th.accent : th.textMuted }}>
           {"✓ Corrigés seulement" + (hideUncorrected ? " (" + filteredPresents.length + "/" + presents.length + ")" : "")}
         </button>
-        {/* Légende couleurs */}
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          {[
-            { label: "≥ 75 %", color: th.success },
-            { label: "≥ 50 %", color: th.warning },
-            { label: "< 50 %", color: th.danger },
-          ].map(function(item) {
+          {[{ label: "≥ 75 %", color: th.success }, { label: "≥ 50 %", color: th.warning }, { label: "< 50 %", color: th.danger }].map(function(item) {
             return (
               <span key={item.label} style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 10, fontFamily: FONT_B, color: th.textMuted }}>
                 <span style={{ display: "inline-block", width: 10, height: 10, borderRadius: 2, background: item.color + "33", border: "1px solid " + item.color + "77" }} />
@@ -311,12 +246,7 @@ function OverviewTab({ exam, students, grades, absents, th, FONT, FONT_B, MONO, 
           {exam.exercises.map(function(ex, exIdx) {
             return (
               <button key={ex.id} onClick={function() { scrollToEx(exIdx); }}
-                style={{
-                  padding: "4px 12px", borderRadius: 20, cursor: "pointer",
-                  fontFamily: FONT_B, fontSize: 11, fontWeight: 600,
-                  background: th.accentBg, border: "1px solid " + th.accent + "44",
-                  color: th.accent,
-                }}>
+                style={{ padding: "4px 12px", borderRadius: 20, cursor: "pointer", fontFamily: FONT_B, fontSize: 11, fontWeight: 600, background: th.accentBg, border: "1px solid " + th.accent + "44", color: th.accent }}>
                 {ex.title || ("Ex " + (exIdx + 1))}
               </button>
             );
@@ -325,173 +255,86 @@ function OverviewTab({ exam, students, grades, absents, th, FONT, FONT_B, MONO, 
       )}
 
       {/* ── Tableau ─────────────────────────────────────────────── */}
-      <div style={{
-        overflowX: "auto",
-        background: th.card,
-        borderRadius: th.radius,
-        border: "1px solid " + th.border,
-        boxShadow: th.shadow,
-      }}>
+      <div style={{ overflowX: "auto", background: th.card, borderRadius: th.radius, border: "1px solid " + th.border, boxShadow: th.shadow }}>
         <table style={{ borderCollapse: "collapse", width: "100%", tableLayout: "auto" }}>
-
-          {/* En-tête niveau 1 : exercices (fusionné) */}
           <thead>
             <tr>
-              {/* Cellule Nom — sticky */}
-              <th rowSpan={2} style={{ ...thBase, textAlign: "left", position: "sticky", left: 0, zIndex: 5, minWidth: 130, borderRight: "2px solid " + th.border, cursor: "pointer" }}
-                onClick={handleNomClick}>
+              <th rowSpan={2} style={{ ...thBase, textAlign: "left", position: "sticky", left: 0, zIndex: 5, minWidth: 130, borderRight: "2px solid " + th.border, cursor: "pointer" }} onClick={handleNomClick}>
                 {"Élève" + sortArrow("nom")}
               </th>
-
-              {/* En-têtes exercices */}
               {exGroups.map(function(g) {
                 if (g.count === 0) return null;
                 return (
-                  <th key={g.ex.id}
-                    ref={function(el) { exRefs.current[g.exIdx] = el; }}
-                    colSpan={g.count}
-                    style={{
-                      ...thBase,
-                      textAlign: "center",
-                      borderLeft: "2px solid " + th.border,
-                      borderRight: "1px solid " + th.border + "44",
-                      color: th.accent,
-                      background: th.accentBg,
-                      fontSize: 11,
-                    }}>
+                  <th key={g.ex.id} ref={function(el) { exRefs.current[g.exIdx] = el; }} colSpan={g.count}
+                    style={{ ...thBase, textAlign: "center", borderLeft: "2px solid " + th.border, borderRight: "1px solid " + th.border + "44", color: th.accent, background: th.accentBg, fontSize: 11 }}>
                     {g.ex.title || ("Exercice " + (g.exIdx + 1))}
                   </th>
                 );
               })}
-
-              {/* Colonne Total — sticky droite */}
               <th rowSpan={2} style={{ ...thBase, textAlign: "right", position: "sticky", right: 0, zIndex: 5, minWidth: 60, borderLeft: "2px solid " + th.border }}>
                 {"Total"}
               </th>
             </tr>
-
-            {/* En-tête niveau 2 : questions (ou items) */}
             <tr>
               {cols.map(function(col, idx) {
-                // Séparateur à gauche si première colonne d'un exercice
                 var isFirstOfEx = idx === 0 || cols[idx - 1].exIdx !== col.exIdx;
                 var active = sort.col === col.id;
                 return (
-                  <th key={col.id}
-                    onClick={function() { handleColClick(col.id); }}
-                    style={{
-                      ...thBase,
-                      textAlign: "center",
-                      cursor: "pointer",
-                      borderLeft: isFirstOfEx ? "2px solid " + th.border : "1px solid " + th.border + "22",
-                      background: active ? th.accentBg : th.surface,
-                      color: active ? th.accent : th.textMuted,
-                      maxWidth: 90,
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                    }}>
+                  <th key={col.id} onClick={function() { handleColClick(col.id); }}
+                    style={{ ...thBase, textAlign: "center", cursor: "pointer", borderLeft: isFirstOfEx ? "2px solid " + th.border : "1px solid " + th.border + "22", background: active ? th.accentBg : th.surface, color: active ? th.accent : th.textMuted, maxWidth: 90, overflow: "hidden", textOverflow: "ellipsis" }}>
                     {col.label + sortArrow(col.id)}
-                    <div style={{ fontSize: 8, fontWeight: 400, color: th.textDim, fontFamily: MONO }}>
-                      {"/" + col.max}
-                    </div>
+                    <div style={{ fontSize: 8, fontWeight: 400, color: th.textDim, fontFamily: MONO }}>{"/" + col.max}</div>
                   </th>
                 );
               })}
             </tr>
           </thead>
-
-          {/* Corps du tableau */}
           <tbody>
             {sortedStudents.map(function(student, rowIdx) {
               var total = getStudentTotal(student.id);
               var totalRatio = examMax > 0 ? total / examMax : 0;
               var totalColor = cellColor(totalRatio, th);
-
               return (
                 <tr key={student.id} style={{ background: rowIdx % 2 === 0 ? "transparent" : th.surface + "55" }}>
-
-                  {/* Nom — sticky gauche */}
-                  <td style={{
-                    ...tdBase,
-                    textAlign: "left",
-                    fontFamily: FONT_B,
-                    fontSize: 11,
-                    fontWeight: 600,
-                    position: "sticky",
-                    left: 0,
-                    zIndex: 2,
-                    background: rowIdx % 2 === 0 ? th.card : th.surface,
-                    borderRight: "2px solid " + th.border,
-                    cursor: "default",
-                    color: th.text,
-                    minWidth: 130,
-                  }}>
+                  <td style={{ ...tdBase, textAlign: "left", fontFamily: FONT_B, fontSize: 11, fontWeight: 600, position: "sticky", left: 0, zIndex: 2, background: rowIdx % 2 === 0 ? th.card : th.surface, borderRight: "2px solid " + th.border, cursor: "default", color: th.text, minWidth: 130 }}>
                     {student.prenom + " "}
                     <span style={{ fontVariant: "small-caps" }}>{student.nom}</span>
                   </td>
-
-                  {/* Cellules questions/items */}
                   {cols.map(function(col, idx) {
                     var isFirstOfEx = idx === 0 || cols[idx - 1].exIdx !== col.exIdx;
                     var obtained = getColValue(student.id, col);
                     var ratio = col.max > 0 ? obtained / col.max : 0;
 
-                    // Cas spécial : question traitée à 0 pt (ni items cochés ni non tentée)
-                    var treated = !!grades[treatedKey(student.id, col.questionId)];
-                    // Si aucun item coché et non traitée → case neutre (non tentée)
-                    var anyItemChecked = col.type === "question"
-                      ? (col.question.items || []).some(function(it) { return !!grades[gk(student.id, it.id)]; })
-                      : !!grades[gk(student.id, col.item.id)];
-                    var attempted = anyItemChecked || treated;
-
-                    // Couleur de fond
-                    var bg, borderColor, textColor;
-                    if (!attempted) {
-                      bg = "transparent";
-                      borderColor = th.border + "22";
-                      textColor = th.textDim;
+                    var attempted;
+                    if (col.type === "question") {
+                      attempted = !!grades[treatedKey(student.id, col.questionId)] || (col.question.items || []).some(function(it) { return !!grades[gradeKey(student.id, it.id)]; });
+                    } else if (col.type === "item") {
+                      attempted = !!grades[gradeKey(student.id, col.item.id)];
+                    } else if (col.type === "brut") {
+                      attempted = typeof nb[gradeKey(student.id, col.ex.id)] === "number";
                     } else {
-                      bg = cellColor(ratio, th) + "22";
-                      borderColor = cellColor(ratio, th) + "55";
-                      textColor = cellColor(ratio, th);
+                      attempted = (col.ex.competences || []).some(function(c) { return typeof pg[palierKey(student.id, col.ex.id, c.id)] === "number"; });
                     }
 
-                    // Index de l'étudiant dans le tableau original (pour navigation)
+                    var bg, borderColor, textColor;
+                    if (!attempted) {
+                      bg = "transparent"; borderColor = th.border + "22"; textColor = th.textDim;
+                    } else {
+                      bg = cellColor(ratio, th) + "22"; borderColor = cellColor(ratio, th) + "55"; textColor = cellColor(ratio, th);
+                    }
+
                     var studentIdx = students.indexOf(student);
 
                     return (
                       <td key={col.id}
-                        onClick={function() {
-                          if (onNavigate) onNavigate(studentIdx, col.exIdx);
-                        }}
+                        onClick={function() { if (onNavigate) onNavigate(studentIdx, col.exIdx); }}
                         title={student.prenom + " " + student.nom + " — " + col.label + " : " + obtained + "/" + col.max}
-                        style={{
-                          ...tdBase,
-                          background: bg,
-                          borderLeft: isFirstOfEx ? "2px solid " + th.border : "1px solid " + borderColor,
-                          color: textColor,
-                          fontWeight: attempted ? 700 : 400,
-                          minWidth: 48,
-                        }}>
+                        style={{ ...tdBase, background: bg, borderLeft: isFirstOfEx ? "2px solid " + th.border : "1px solid " + borderColor, color: textColor, fontWeight: attempted ? 700 : 400, minWidth: 48 }}>
                         {attempted ? obtained : "—"}
                       </td>
                     );
                   })}
-
-                  {/* Total — sticky droite */}
-                  <td style={{
-                    ...tdBase,
-                    textAlign: "right",
-                    position: "sticky",
-                    right: 0,
-                    zIndex: 2,
-                    background: rowIdx % 2 === 0 ? th.card : th.surface,
-                    borderLeft: "2px solid " + th.border,
-                    fontWeight: 700,
-                    color: totalColor,
-                    cursor: "default",
-                    minWidth: 60,
-                  }}>
+                  <td style={{ ...tdBase, textAlign: "right", position: "sticky", right: 0, zIndex: 2, background: rowIdx % 2 === 0 ? th.card : th.surface, borderLeft: "2px solid " + th.border, fontWeight: 700, color: totalColor, cursor: "default", minWidth: 60 }}>
                     {total.toFixed(total % 1 === 0 ? 0 : 1)}
                     <span style={{ fontSize: 9, color: th.textDim, fontWeight: 400 }}>{"/" + examMax}</span>
                   </td>
@@ -502,7 +345,6 @@ function OverviewTab({ exam, students, grades, absents, th, FONT, FONT_B, MONO, 
         </table>
       </div>
 
-      {/* ── Note de bas de page ───────────────────────────────────── */}
       <div style={{ fontSize: 10, color: th.textDim, fontFamily: FONT_B, marginTop: 8, textAlign: "right" }}>
         {presents.length + " élèves · clic sur une cellule → Correction"}
       </div>

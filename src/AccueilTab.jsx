@@ -1,133 +1,53 @@
 import { useState } from "react";
-import { ETABLISSEMENT, APP_VERSION } from "./config/settings";
+import { APP_VERSION } from "./config/settings";
+import { studentTotal, examTotal, noteSur100 } from "./utils/calculs";
 
-var PRESET_ICON = { standard: "♜", simple: "♙", complet: "♔", custom: "♞" };
-
-function gradeKeyLocal(studentId, itemId) { return studentId + "__" + itemId; }
-
-function calcClassAvg(exam, students, grades) {
-  if (!exam || !students || students.length === 0) return null;
-  var presents = students.filter(function(s) {
-    return exam.exercises.some(function(ex) {
-      return ex.questions.some(function(q) {
-        return q.items.some(function(it) { return !!grades[gradeKeyLocal(s.id, it.id)]; });
-      });
-    });
-  });
-  if (presents.length === 0) return null;
-  var examMax = exam.exercises.reduce(function(tot, ex) {
-    return tot + ex.questions.reduce(function(a, q) {
-      return a + q.items.reduce(function(b, it) { return b + (parseFloat(it.points) || 0); }, 0);
-    }, 0);
-  }, 0);
-  if (examMax === 0) return null;
-  var sum = 0;
-  presents.forEach(function(s) {
-    var earned = 0;
-    exam.exercises.forEach(function(ex) {
-      ex.questions.forEach(function(q) {
-        q.items.forEach(function(it) {
-          if (grades[gradeKeyLocal(s.id, it.id)]) earned += parseFloat(it.points) || 0;
-        });
-      });
-    });
-    sum += (earned / examMax) * 20;
-  });
-  return sum / presents.length;
-}
-
-function calcCompetences(exam, students, grades) {
-  var comps = { A: 0, N: 0, R: 0, V: 0 };
-  var totals = { A: 0, N: 0, R: 0, V: 0 };
-  if (!exam || !students || students.length === 0) return comps;
-  exam.exercises.forEach(function(ex) {
-    ex.questions.forEach(function(q) {
-      var qComps = q.competences || [];
-      q.items.forEach(function(it) {
-        var pts = parseFloat(it.points) || 0;
-        students.forEach(function(s) {
-          var earned = grades[gradeKeyLocal(s.id, it.id)] ? pts : 0;
-          qComps.forEach(function(c) {
-            if (comps[c] !== undefined) {
-              comps[c] += earned;
-              totals[c] += pts;
-            }
-          });
-        });
-      });
-    });
-  });
-  var result = {};
-  ["A", "N", "R", "V"].forEach(function(c) {
-    result[c] = totals[c] > 0 ? comps[c] / totals[c] : null;
-  });
-  return result;
-}
-
-function countCorriges(exam, students, grades) {
+function countCorriges(exam, students, grades, notesBrutes, palierGrades) {
   if (!exam || !students) return 0;
   return students.filter(function(s) {
     return exam.exercises.some(function(ex) {
-      return ex.questions.some(function(q) {
-        return q.items.some(function(it) { return !!grades[gradeKeyLocal(s.id, it.id)]; });
-      });
+      if (ex.type === "brut") return typeof notesBrutes[s.id + "__" + ex.id] === "number";
+      if (ex.type === "paliers") return (ex.competences || []).some(function(c) { return typeof palierGrades[s.id + "__" + ex.id + "__" + c.id] === "number"; });
+      return ex.questions.some(function(q) { return q.items.some(function(it) { return !!grades[s.id + "__" + it.id]; }); });
     });
   }).length;
 }
 
-function calcMinMax(exam, students, grades) {
-  if (!exam || !students || students.length === 0) return null;
-  var examMax = exam.exercises.reduce(function(tot, ex) {
-    return tot + ex.questions.reduce(function(a, q) {
-      return a + q.items.reduce(function(b, it) { return b + (parseFloat(it.points) || 0); }, 0);
-    }, 0);
-  }, 0);
-  if (examMax === 0) return null;
-  var presents = students.filter(function(s) {
+function corrigedStudents(exam, students, grades, notesBrutes, palierGrades) {
+  return students.filter(function(s) {
     return exam.exercises.some(function(ex) {
-      return ex.questions.some(function(q) {
-        return q.items.some(function(it) { return !!grades[gradeKeyLocal(s.id, it.id)]; });
-      });
+      if (ex.type === "brut") return typeof notesBrutes[s.id + "__" + ex.id] === "number";
+      if (ex.type === "paliers") return (ex.competences || []).some(function(c) { return typeof palierGrades[s.id + "__" + ex.id + "__" + c.id] === "number"; });
+      return ex.questions.some(function(q) { return q.items.some(function(it) { return !!grades[s.id + "__" + it.id]; }); });
     });
   });
+}
+
+function calcClassAvg(exam, students, grades, notesBrutes, palierGrades) {
+  if (!exam || !students || students.length === 0) return null;
+  var presents = corrigedStudents(exam, students, grades, notesBrutes, palierGrades);
   if (presents.length === 0) return null;
-  var notes = presents.map(function(s) {
-    var earned = 0;
-    exam.exercises.forEach(function(ex) {
-      ex.questions.forEach(function(q) {
-        q.items.forEach(function(it) {
-          if (grades[gradeKeyLocal(s.id, it.id)]) earned += parseFloat(it.points) || 0;
-        });
-      });
-    });
-    return (earned / examMax) * 20;
-  });
+  var max = examTotal(exam);
+  if (max === 0) return null;
+  var sum = 0;
+  presents.forEach(function(s) { sum += noteSur100(studentTotal(grades, notesBrutes, palierGrades, s.id, exam), max); });
+  return sum / presents.length;
+}
+
+function calcMinMax(exam, students, grades, notesBrutes, palierGrades) {
+  if (!exam || !students || students.length === 0) return null;
+  var max = examTotal(exam);
+  if (max === 0) return null;
+  var presents = corrigedStudents(exam, students, grades, notesBrutes, palierGrades);
+  if (presents.length === 0) return null;
+  var notes = presents.map(function(s) { return noteSur100(studentTotal(grades, notesBrutes, palierGrades, s.id, exam), max); });
   return { min: Math.min.apply(null, notes), max: Math.max.apply(null, notes) };
 }
 
 function fmt1(n) { return (Math.round(n * 10) / 10).toFixed(1); }
 
-function CompBar({ label, value, color }) {
-  if (value === null) return null;
-  var pct = Math.round(value * 100);
-  return (
-    <div style={{ marginBottom: 4 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginBottom: 2 }}>
-        <span style={{ fontWeight: 600 }}>{label}</span>
-        <span style={{ opacity: 0.7 }}>{pct + "%"}</span>
-      </div>
-      <div style={{ height: 5, borderRadius: 3, background: "rgba(0,0,0,0.08)", overflow: "hidden" }}>
-        <div style={{ height: "100%", width: pct + "%", background: color, borderRadius: 3, transition: "width 0.4s" }} />
-      </div>
-    </div>
-  );
-}
-
-function AccueilTab({ th, FONT_B, MONO, profiles, activeProfileId, PROFILE_COLORS, exams, students, grades, perles, setMode, switchProfile, setShowProfileMenu, setActiveExamId, askConfirm, onChangelog, onFullBackup, onOpenRestore, backupBusy,
-  linkedFileSupported, linkedFileName, linkedFilePerm,
-  onLinkFile, onUnlinkFile, onReauthorize }) {
+function AccueilTab({ th, FONT_B, MONO, profiles, activeProfileId, PROFILE_COLORS, exams, students, grades, notesBrutes, palierGrades, setMode, switchProfile, setShowProfileMenu, setActiveExamId, askConfirm, onChangelog, onFullBackup, onOpenRestore, backupBusy }) {
   var _ddOpen = useState(false); var ddOpen = _ddOpen[0]; var setDdOpen = _ddOpen[1];
-  var _perleIdx = useState(0); var perleIdx = _perleIdx[0]; var setPerleIdx = _perleIdx[1];
 
   var profileIndex = profiles.findIndex(function(p) { return p.id === activeProfileId; });
   var profileColor = PROFILE_COLORS[profileIndex] !== undefined ? PROFILE_COLORS[profileIndex] : PROFILE_COLORS[0];
@@ -137,7 +57,7 @@ function AccueilTab({ th, FONT_B, MONO, profiles, activeProfileId, PROFILE_COLOR
   var avgSum = 0;
   var avgCount = 0;
   exams.forEach(function(ex) {
-    var avg = calcClassAvg(ex, students, grades);
+    var avg = calcClassAvg(ex, students, grades, notesBrutes, palierGrades);
     if (avg !== null) { avgSum += avg; avgCount++; }
   });
   var moyenneGlobale = avgCount > 0 ? avgSum / avgCount : null;
@@ -145,29 +65,15 @@ function AccueilTab({ th, FONT_B, MONO, profiles, activeProfileId, PROFILE_COLOR
   var lastExam = exams.length > 0 ? exams[exams.length - 1] : null;
   var prevExams = exams.length > 1 ? exams.slice(0, exams.length - 1).slice(-5).reverse() : [];
 
-  var lastCorriges = lastExam ? countCorriges(lastExam, students, grades) : 0;
+  var lastCorriges = lastExam ? countCorriges(lastExam, students, grades, notesBrutes, palierGrades) : 0;
   var tauxCorrection = students.length > 0 ? (lastCorriges / students.length) * 100 : 0;
 
-  var lastAvg = lastExam ? calcClassAvg(lastExam, students, grades) : null;
-  var lastMM = lastExam ? calcMinMax(lastExam, students, grades) : null;
-  var lastComps = lastExam ? calcCompetences(lastExam, students, grades) : { A: null, N: null, R: null, V: null };
-
-  var compColors = { A: "#5B8FF9", N: "#61DDAA", R: "#F6903D", V: "#F08BB4" };
+  var lastAvg = lastExam ? calcClassAvg(lastExam, students, grades, notesBrutes, palierGrades) : null;
+  var lastMM = lastExam ? calcMinMax(lastExam, students, grades, notesBrutes, palierGrades) : null;
 
   var cardStyle = { background: th.card, border: "1px solid " + th.border, borderRadius: th.radiusSm, padding: "16px 18px" };
   var labelStyle = { fontSize: 11, color: th.textMuted, fontFamily: FONT_B, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 };
   var bigNumStyle = { fontSize: 26, fontWeight: 700, color: th.text, fontFamily: MONO, lineHeight: 1 };
-
-  var toutesLesPerles = [];
-  (students || []).forEach(function(s) {
-    var initiales = (s.nom ? s.nom[0] : "") + (s.prenom ? s.prenom[0] : "");
-    ((perles || {})[s.id] || []).forEach(function(p) {
-      toutesLesPerles.push({ texte: p.texte, contexte: p.contexte, initiales: initiales });
-    });
-  });
-  var perleActive = toutesLesPerles.length > 0
-    ? toutesLesPerles[perleIdx % toutesLesPerles.length]
-    : null;
 
   return (
     <div style={{ maxWidth: 900, margin: "0 auto", padding: "20px 16px", fontFamily: FONT_B }}>
@@ -231,7 +137,7 @@ function AccueilTab({ th, FONT_B, MONO, profiles, activeProfileId, PROFILE_COLOR
           <div style={bigNumStyle}>{moyenneGlobale !== null ? fmt1(moyenneGlobale) : "—"}</div>
           {moyenneGlobale !== null && (
             <div style={{ marginTop: 8, height: 4, borderRadius: 2, background: "rgba(0,0,0,0.08)", overflow: "hidden" }}>
-              <div style={{ height: "100%", width: (moyenneGlobale / 20 * 100) + "%", background: profileColor, borderRadius: 2 }} />
+              <div style={{ height: "100%", width: moyenneGlobale + "%", background: profileColor, borderRadius: 2 }} />
             </div>
           )}
         </div>
@@ -268,7 +174,7 @@ function AccueilTab({ th, FONT_B, MONO, profiles, activeProfileId, PROFILE_COLOR
               <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 12 }}>
                 <div>
                   <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-                    <span style={{ fontSize: 18, color: profileColor }}>{PRESET_ICON[(lastExam.features || {}).preset] || "♜"}</span>
+                    <span style={{ fontSize: 18, color: profileColor }}>{"♜"}</span>
                     <span style={{ fontWeight: 700, fontSize: 14, color: th.text }}>{lastExam.nomDS || lastExam.name || "Sans titre"}</span>
                   </div>
                   <div style={{ fontSize: 11, color: th.textMuted }}>
@@ -281,11 +187,11 @@ function AccueilTab({ th, FONT_B, MONO, profiles, activeProfileId, PROFILE_COLOR
               </div>
 
               {/* Mini-stats */}
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 12 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 14 }}>
                 <div style={{ background: th.surface, borderRadius: th.radiusSm, padding: "8px 10px", textAlign: "center" }}>
                   <div style={{ fontSize: 10, color: th.textMuted, marginBottom: 2 }}>{"Moyenne"}</div>
                   <div style={{ fontSize: 16, fontWeight: 700, color: th.text, fontFamily: MONO }}>{lastAvg !== null ? fmt1(lastAvg) : "—"}</div>
-                  {lastAvg !== null && <div style={{ fontSize: 9, color: th.textMuted, marginTop: 1 }}>{"brut"}</div>}
+                  {lastAvg !== null && <div style={{ fontSize: 9, color: th.textMuted, marginTop: 1 }}>{"/100"}</div>}
                 </div>
                 <div style={{ background: th.surface, borderRadius: th.radiusSm, padding: "8px 10px", textAlign: "center" }}>
                   <div style={{ fontSize: 10, color: th.textMuted, marginBottom: 2 }}>{"Étendue"}</div>
@@ -297,26 +203,15 @@ function AccueilTab({ th, FONT_B, MONO, profiles, activeProfileId, PROFILE_COLOR
                 </div>
               </div>
 
-              {/* Barres de compétences */}
-              <div style={{ marginBottom: 14 }}>
-                {["A", "N", "R", "V"].map(function(c) {
-                  return <CompBar key={c} label={c} value={lastComps[c]} color={compColors[c]} />;
-                })}
-              </div>
-
               {/* Boutons */}
               <div style={{ display: "flex", gap: 8 }}>
                 <button onClick={function() { setActiveExamId(lastExam.id); setMode("correct"); }}
                   style={{ flex: 1, padding: "7px 0", borderRadius: th.radiusSm, border: "none", background: profileColor, color: "#fff", fontFamily: FONT_B, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
                   {"Correction →"}
                 </button>
-                <button onClick={function() { setActiveExamId(lastExam.id); setMode("resultats"); }}
+                <button onClick={function() { setActiveExamId(lastExam.id); setMode("stats"); }}
                   style={{ flex: 1, padding: "7px 0", borderRadius: th.radiusSm, border: "1px solid " + th.border, background: th.surface, color: th.text, fontFamily: FONT_B, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
-                  {"Résultats"}
-                </button>
-                <button onClick={function() { setActiveExamId(lastExam.id); setMode("export"); }}
-                  style={{ flex: 1, padding: "7px 0", borderRadius: th.radiusSm, border: "1px solid " + th.border, background: th.surface, color: th.text, fontFamily: FONT_B, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
-                  {"Export"}
+                  {"Stats"}
                 </button>
               </div>
             </div>
@@ -334,20 +229,20 @@ function AccueilTab({ th, FONT_B, MONO, profiles, activeProfileId, PROFILE_COLOR
           ) : (
             <div style={{ ...cardStyle, padding: 0, overflow: "hidden" }}>
               {prevExams.map(function(ex, i) {
-                var avg = calcClassAvg(ex, students, grades);
-                var corriges = countCorriges(ex, students, grades);
+                var avg = calcClassAvg(ex, students, grades, notesBrutes, palierGrades);
+                var corriges = countCorriges(ex, students, grades, notesBrutes, palierGrades);
                 var isComplete = corriges >= students.length;
                 return (
                   <div key={ex.id}
                     style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderBottom: i < prevExams.length - 1 ? "1px solid " + th.border : "none", background: "transparent" }}>
-                    <span style={{ fontSize: 16, color: profileColor, flexShrink: 0 }}>{PRESET_ICON[(ex.features || {}).preset] || "♜"}</span>
+                    <span style={{ fontSize: 16, color: profileColor, flexShrink: 0 }}>{"♜"}</span>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontWeight: 600, fontSize: 13, color: th.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ex.nomDS || ex.name || "Sans titre"}</div>
                       <div style={{ fontSize: 11, color: th.textMuted }}>{(ex.dateDS || "—") + " · " + students.length + " élève" + (students.length > 1 ? "s" : "")}</div>
                     </div>
                     <div style={{ textAlign: "right", flexShrink: 0 }}>
                       <div style={{ fontSize: 13, fontWeight: 700, color: th.text, fontFamily: MONO }}>{avg !== null ? fmt1(avg) : "—"}</div>
-                      {avg !== null && <div style={{ fontSize: 9, color: th.textMuted }}>{"brut"}</div>}
+                      {avg !== null && <div style={{ fontSize: 9, color: th.textMuted }}>{"/100"}</div>}
                     </div>
                     <span style={{ width: 8, height: 8, borderRadius: "50%", background: isComplete ? "#22c55e" : "#f59e0b", flexShrink: 0 }} title={isComplete ? "Complet" : "Copies manquantes"} />
                   </div>
@@ -357,39 +252,6 @@ function AccueilTab({ th, FONT_B, MONO, profiles, activeProfileId, PROFILE_COLOR
           )}
         </div>
       </div>
-
-      {/* PERLE DU MOMENT */}
-      {perleActive && (
-        <div style={{
-          ...cardStyle,
-          marginBottom: 20,
-          borderLeft: "3px solid #7c3aed",
-          display: "flex", alignItems: "center", gap: 16
-        }}>
-          <span style={{ fontSize: 22, flexShrink: 0 }}>{"💎"}</span>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 14, fontStyle: "italic", color: th.text, lineHeight: 1.5 }}>
-              {"“" + perleActive.texte + "”"}
-            </div>
-            <div style={{ fontSize: 11, color: th.textMuted, marginTop: 4 }}>
-              {"— " + perleActive.initiales +
-                (perleActive.contexte ? " · " + perleActive.contexte : "")}
-            </div>
-          </div>
-          {toutesLesPerles.length > 1 && (
-            <button
-              onClick={function() {
-                setPerleIdx(function(i) { return (i + 1) % toutesLesPerles.length; });
-              }}
-              title={"Autre perle"}
-              style={{ background: "none", border: "1px solid " + th.border,
-                borderRadius: th.radiusSm, cursor: "pointer", fontSize: 16,
-                color: th.textMuted, padding: "4px 8px", flexShrink: 0 }}>
-              {"🔀"}
-            </button>
-          )}
-        </div>
-      )}
 
       {/* SAUVEGARDE & RESTAURATION (filet universel) */}
       {(onFullBackup || onOpenRestore) && (
@@ -411,30 +273,9 @@ function AccueilTab({ th, FONT_B, MONO, profiles, activeProfileId, PROFILE_COLOR
         </div>
       )}
 
-      {linkedFileSupported && (
-        <div style={{ marginTop: 6, fontSize: 10, color: th.textMuted, fontFamily: FONT_B }}>
-          {!linkedFileName && (
-            <span style={{ cursor: "pointer", textDecoration: "underline" }} onClick={onLinkFile}>
-              {"🔗 Lier un fichier pour la sauvegarde auto"}
-            </span>
-          )}
-          {linkedFileName && linkedFilePerm === "granted" && (
-            <span>{"✅ Auto-sauvegarde active — "}<span style={{ cursor: "pointer", textDecoration: "underline" }} onClick={onUnlinkFile}>{"délier"}</span></span>
-          )}
-          {linkedFileName && linkedFilePerm === "prompt" && (
-            <span style={{ color: th.warning, cursor: "pointer", textDecoration: "underline" }} onClick={onReauthorize}>
-              {"⚠ Réautoriser la sauvegarde auto"}
-            </span>
-          )}
-          {linkedFileName && linkedFilePerm === "denied" && (
-            <span style={{ color: th.danger }}>{"❌ Sauvegarde auto désactivée (permission refusée)"}</span>
-          )}
-        </div>
-      )}
-
       {/* PIED DE PAGE */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 0", borderTop: "1px solid " + th.border, fontSize: 11, color: th.textDim }}>
-        <span>{"C.H.E.C.K. v" + APP_VERSION + " · " + (ETABLISSEMENT.nom || "")}</span>
+        <span>{"C.H.E.C.K.-lite v" + APP_VERSION}</span>
         <button
           onClick={onChangelog}
           style={{ background: "none", border: "none", cursor: "pointer", fontFamily: FONT_B, fontSize: 11, fontWeight: 600, color: profileColor, padding: 0 }}>
