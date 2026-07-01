@@ -14,7 +14,10 @@ export const APP_VERSION = "1.0-lite";
 // en dur dans utils/calculs.js (remarquesAjustement) :
 //   - "r" Rédaction  : -1 pt/case, plafonné à -2 pts sur la copie
 //   - "g" Guillemets : -1 pt si cochée ≥ 3 fois sur la copie
-//   - "b" Bonus      : +1 pt/case, plafonné à +4 pts sur la copie
+//   - "b" Bonus      : +0,5 ou +1 pt/case au choix (menu déroulant),
+//                      plafonné à +4 pts sur la copie
+// Rédaction/Guillemets n'ont de sens que par question (exercices "items") ;
+// Bonus n'apparaît que là aussi — pas sur les exercices "brut"/"paliers".
 export const REMARQUES_FIXES = [
   { id: "r", label: "Rédaction",  icon: "✏️" },
   { id: "b", label: "Bonus",      icon: "🎁" },

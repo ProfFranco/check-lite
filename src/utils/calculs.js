@@ -113,29 +113,83 @@ function remarkTargetsForExam(exam) {
   return ids;
 }
 
+/** Valeur en points d'un identifiant de remarque "Bonus" ("b" = ancien
+ *  format, valait toujours 1 pt ; "b1"/"b05" = nouveau choix +1/+0,5 pt
+ *  via le menu déroulant). Retourne 0 si l'identifiant n'est pas un bonus. */
+function bonusIdValue(rid) {
+  if (rid === "b" || rid === "b1") return 1;
+  if (rid === "b05") return 0.5;
+  return 0;
+}
+
+/** Valeur actuelle (0, 0.5 ou 1) de la remarque "Bonus" pour une cible
+ *  (studentId__targetId) donnée — sert à l'affichage du menu déroulant. */
+export function currentBonusValue(remarks, studentId, targetId) {
+  const arr = remarks[remarkKey(studentId, targetId)] || [];
+  for (const rid of arr) { const v = bonusIdValue(rid); if (v > 0) return v; }
+  return 0;
+}
+
 /**
  * Ajustement en points dû aux remarques fixes pour un élève :
  *   - "r" Rédaction  : -1 pt/case, plafonné à -2 pts sur la copie
  *   - "g" Guillemets : -1 pt si cochée ≥ 3 fois sur la copie
- *   - "b" Bonus      : +1 pt/case, plafonné à +4 pts sur la copie
+ *   - "b" Bonus      : +0,5 ou +1 pt/case (au choix), plafonné à +4 pts sur la copie
  * Retourne un nombre (peut être négatif) à ajouter au total brut.
  */
 export function remarquesAjustement(remarks, studentId, exam) {
+  return remarquesBreakdown(remarks, studentId, exam).total;
+}
+
+/**
+ * Détail par catégorie de l'ajustement dû aux remarques fixes pour un élève,
+ * avec indication du plafonnement (pour affichage distinct dans le héros) :
+ *   - bonus            : points gagnés grâce à "Bonus" (0 à 4)
+ *   - malusRedaction   : points perdus à cause de "Rédaction" (0 à 2)
+ *   - malusGuillemets  : 0 ou 1 (fixe, dès 3 cases "Guillemets" cochées)
+ *   - bonusCapped/redactionCapped : true si le plafond est atteint ou dépassé
+ *
+ * `exam` peut être un exercice unique enveloppé en { exercises: [ex] } pour
+ * n'agréger que les remarques de cet exercice (voir exerciseScoreWithRemarks).
+ */
+export function remarquesBreakdown(remarks, studentId, exam) {
   const ids = remarkTargetsForExam(exam);
-  let countR = 0, countG = 0, countB = 0;
+  let countR = 0, countG = 0, sumB = 0;
   ids.forEach(function(id) {
     const r = remarks[remarkKey(studentId, id)];
     if (!r) return;
     r.forEach(function(rid) {
       if (rid === "r") countR++;
       else if (rid === "g") countG++;
-      else if (rid === "b") countB++;
+      else sumB += bonusIdValue(rid);
     });
   });
   const malusRedaction = Math.min(2, countR);
   const malusGuillemets = countG >= 3 ? 1 : 0;
-  const bonus = Math.min(4, countB);
-  return bonus - malusRedaction - malusGuillemets;
+  const bonus = Math.min(4, sumB);
+  return {
+    countR, countG, sumB,
+    bonus, malusRedaction, malusGuillemets,
+    bonusCapped: sumB > 4,
+    redactionCapped: countR > 2,
+    total: bonus - malusRedaction - malusGuillemets,
+  };
+}
+
+/**
+ * Score d'un exercice en intégrant les points de bonus/malus dus aux
+ * remarques fixes de ses propres cibles (une question par question pour un
+ * exercice "items", ou l'exercice lui-même pour "brut"/"paliers"). Le
+ * plafond (+4 bonus / -2 rédaction / -1 guillemets) s'applique localement à
+ * cet exercice, exactement comme au niveau de la copie entière — la copie
+ * garde son propre plafond indépendant (voir remarquesBreakdown sur tout
+ * l'exam), donc la somme des exercices peut différer du total copie dans
+ * les cas extrêmes de dépassement de plafond.
+ */
+export function exerciseScoreWithRemarks(grades, notesBrutes, palierGrades, palierAjust, remarks, studentId, exercise) {
+  const base = exerciseScore(grades, notesBrutes, palierGrades, palierAjust, studentId, exercise);
+  const adjust = remarquesBreakdown(remarks, studentId, { exercises: [exercise] }).total;
+  return { earned: Math.max(0, base.earned + adjust), total: base.total };
 }
 
 // ─── Scores par exercice (pour le radar "classement" en Stats) ───

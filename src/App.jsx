@@ -16,8 +16,8 @@ import {
 import { lightTheme, darkTheme, youngTheme, FONT_TITLE, FONT_BODY, FONT_MONO, FONTS_URL } from "./config/theme";
 import {
   uid, gradeKey, remarkKey, palierKey, clamp, competenceMaxBareme,
-  questionScore, exerciseScore, studentTotal, examTotal,
-  remarquesAjustement, exercisePctAbsolute, exercisePctRelative,
+  questionScore, exerciseScoreWithRemarks, studentTotal, examTotal,
+  remarquesAjustement, remarquesBreakdown, currentBonusValue, exercisePctAbsolute, exercisePctRelative,
   importCSV, downloadFile, treatedKey, validateState,
 } from "./utils/calculs";
 import { loadDB, saveDB, loadMeta, saveMeta, initProfiles, profileDBName, openNamedDB } from "./utils/db";
@@ -70,6 +70,9 @@ export default function App() {
   var _showMore = useState(false); var setShowMore = _showMore[1]; var showMore = _showMore[0];
   var _showDsMenu = useState(false); var setShowDsMenu = _showDsMenu[1]; var showDsMenu = _showDsMenu[0];
   var _tab = useState("general"); var setTab = _tab[1]; var tab = _tab[0];
+  var _csortMode = useState("rang"); var setCsortMode = _csortMode[1]; var csortMode = _csortMode[0];
+  var _bonusMenuFor = useState(null); var setBonusMenuFor = _bonusMenuFor[1]; var bonusMenuFor = _bonusMenuFor[0];
+  var _bonusMenuPos = useState(null); var setBonusMenuPos = _bonusMenuPos[1]; var bonusMenuPos = _bonusMenuPos[0];
   var _dbLoaded = useState(false); var setDbLoaded = _dbLoaded[1]; var dbLoaded = _dbLoaded[0];
   // Prep state
   var _collapsed = useState({}); var setCollapsed = _collapsed[1]; var collapsed = _collapsed[0];
@@ -594,6 +597,21 @@ export default function App() {
       return out;
     });
   }
+  // "Bonus" a un menu déroulant +0,5/+1 pt au lieu d'un simple toggle — un seul niveau actif à la fois par cible
+  function setBonusRemark(studentId, targetId, value) {
+    setRemarks(function(prev) {
+      var key = remarkKey(studentId, targetId);
+      var cur = prev[key] || [];
+      var bonusId = value === 0.5 ? "b05" : "b1";
+      var already = cur.indexOf(bonusId) >= 0 || (value === 1 && cur.indexOf("b") >= 0);
+      var stripped = cur.filter(function(x) { return x !== "b" && x !== "b1" && x !== "b05"; });
+      var next = already ? stripped : stripped.concat([bonusId]);
+      var out = Object.assign({}, prev);
+      if (next.length) out[key] = next; else delete out[key];
+      return out;
+    });
+    setBonusMenuFor(null);
+  }
 
   // ─── Navigation pas-à-pas (question/compétence courante, tablette/mobile) ───
   function listLengthOf(ex) {
@@ -650,7 +668,8 @@ export default function App() {
   var stuTot = exam ? studentTotal(grades, notesBrutes, palierGrades, palierAjust, s.id, exam) : 0;
   var eAbsVals = exam ? exercisePctAbsolute(grades, notesBrutes, palierGrades, palierAjust, s.id, exam) : [];
   var eRelVals = exam ? exercisePctRelative(grades, notesBrutes, palierGrades, palierAjust, s.id, exam, students) : [];
-  var remAdjust = exam ? remarquesAjustement(remarks, s.id, exam) : 0;
+  var remBreak = exam ? remarquesBreakdown(remarks, s.id, exam) : { bonus: 0, malusRedaction: 0, malusGuillemets: 0, bonusCapped: false, redactionCapped: false, total: 0 };
+  var remAdjust = remBreak.total;
   var manMalus = malusManuel[s.id] || 0;
   var totalAdjust = remAdjust + manMalus;
   var curNote = Math.max(0, stuTot + totalAdjust);
@@ -1085,7 +1104,7 @@ export default function App() {
             {/* Note par exercice — intégrée au héros, bien lisible */}
             <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 10, paddingTop: 10, borderTop: "1px solid " + th.border }}>
               {exam.exercises.map(function(x) {
-                var sc = exerciseScore(grades, notesBrutes, palierGrades, palierAjust, s.id, x);
+                var sc = exerciseScoreWithRemarks(grades, notesBrutes, palierGrades, palierAjust, remarks, s.id, x);
                 return (
                   <div key={x.id} style={{ fontSize: 13, fontFamily: FONT_B, color: th.text }}>
                     <span style={{ fontWeight: 700 }}>{x.title}</span>{" "}
@@ -1097,10 +1116,25 @@ export default function App() {
           </div>
 
           {/* Malus manuel */}
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, padding: "6px 10px", borderRadius: th.radiusSm, background: th.surface, border: "1px solid " + th.border }}>
-            <span style={{ fontSize: 11, fontFamily: FONT_B, color: th.textMuted }}>
-              {"Remarques : " + (remAdjust > 0 ? "+" : "") + remAdjust + " pt"}
-            </span>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, padding: "6px 10px", borderRadius: th.radiusSm, background: th.surface, border: "1px solid " + th.border, flexWrap: "wrap" }}>
+            {remBreak.bonus === 0 && remBreak.malusRedaction === 0 && remBreak.malusGuillemets === 0 && (
+              <span style={{ fontSize: 11, fontFamily: FONT_B, color: th.textDim }}>{"Remarques : aucune"}</span>
+            )}
+            {remBreak.bonus > 0 && (
+              <span style={{ fontSize: 11, fontFamily: FONT_B, fontWeight: 700, color: th.success, background: th.success + "18", border: "1px solid " + th.success + "40", borderRadius: 10, padding: "2px 8px" }}>
+                {"🎁 Bonus : +" + remBreak.bonus + " pt" + (remBreak.bonusCapped ? " (max bonus)" : "")}
+              </span>
+            )}
+            {remBreak.malusRedaction > 0 && (
+              <span style={{ fontSize: 11, fontFamily: FONT_B, fontWeight: 700, color: th.danger, background: th.danger + "18", border: "1px solid " + th.danger + "40", borderRadius: 10, padding: "2px 8px" }}>
+                {"✏️ Rédaction : -" + remBreak.malusRedaction + " pt" + (remBreak.redactionCapped ? " (max malus)" : "")}
+              </span>
+            )}
+            {remBreak.malusGuillemets > 0 && (
+              <span style={{ fontSize: 11, fontFamily: FONT_B, fontWeight: 700, color: th.danger, background: th.danger + "18", border: "1px solid " + th.danger + "40", borderRadius: 10, padding: "2px 8px" }}>
+                {"“” Guillemets : -" + remBreak.malusGuillemets + " pt"}
+              </span>
+            )}
             <div style={{ flex: 1 }} />
             <span style={{ fontSize: 10, color: th.textMuted, fontFamily: FONT_B }}>Malus/bonus manuel (pts) :</span>
             <input type="number" step="0.5" value={manMalus}
@@ -1111,26 +1145,13 @@ export default function App() {
           {/* Exercise tabs */}
           <div style={{ display: "flex", gap: 3, marginBottom: 8 }}>
             {exam.exercises.map(function(x, i) {
-              var sc = exerciseScore(grades, notesBrutes, palierGrades, palierAjust, s.id, x);
+              var sc = exerciseScoreWithRemarks(grades, notesBrutes, palierGrades, palierAjust, remarks, s.id, x);
               return (
                 <button key={x.id} onClick={function() { setEi(i); setQi(0); }} style={{ flex: 1, padding: "6px 3px", borderRadius: th.radiusSm, cursor: "pointer", fontFamily: FONT_B, fontSize: 10, fontWeight: 600, background: i === ei ? th.accent + "15" : "transparent", border: "1.5px solid " + (i === ei ? th.accent + "50" : th.border), color: i === ei ? th.accent : th.textMuted }}>
                   <div>{x.title.length > 20 ? x.title.slice(0, 18) + "…" : x.title}</div>
                   <div style={{ fontSize: 9, fontFamily: MONO, opacity: 0.7 }}>{fmt1(sc.earned) + "/" + fmt1(sc.total)}</div>
                 </button>); })}
           </div>
-
-          {/* Remarques (fixes) pour un exercice sans sous-questions (brut/paliers) */}
-          {exCur && (exCur.type === "brut" || exCur.type === "paliers") && (function() {
-            var tr = remarks[remarkKey(s.id, exCur.id)] || [];
-            return (
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 3, marginBottom: 8 }}>
-                {REMARQUES_FIXES.map(function(rem) {
-                  var act = tr.indexOf(rem.id) >= 0;
-                  return <button key={rem.id} onClick={function() { toggleRemark(s.id, exCur.id, rem.id); }} style={{ padding: "5px 9px", borderRadius: 14, cursor: "pointer", fontFamily: FONT_B, fontSize: 11, fontWeight: 600, background: act ? th.warningBg : "transparent", border: "1px solid " + (act ? th.warning + "40" : th.border), color: act ? th.warning : th.textMuted }}>{rem.icon + " " + rem.label}</button>;
-                })}
-              </div>
-            );
-          })()}
 
           {/* Exercice type "Note brute" */}
           {exCur && exCur.type === "brut" && (
@@ -1229,6 +1250,8 @@ export default function App() {
             </div>
           )}
 
+          {bonusMenuFor && <div style={{ position: "fixed", inset: 0, zIndex: 55 }} onClick={function() { setBonusMenuFor(null); }} />}
+
           {/* Questions (exercice type "items") — une seule question à la fois sur tablette/mobile */}
           {exCur && (!exCur.type || exCur.type === "items") && (function() {
             var qList = isTouch ? (exCur.questions[qi] ? [exCur.questions[qi]] : []) : exCur.questions;
@@ -1264,9 +1287,32 @@ export default function App() {
                         <span style={{ fontFamily: MONO, fontSize: 11, fontWeight: 700, color: ch ? th.success : th.textDim }}>{it.points}</span>
                       </button>); })}
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 3, marginTop: 4, marginBottom: isTouch ? 8 : 4 }}>
-                    {REMARQUES_FIXES.map(function(rem) {
+                    {REMARQUES_FIXES.filter(function(rem) { return rem.id !== "b"; }).map(function(rem) {
                       var act = qr.indexOf(rem.id) >= 0;
                       return <button key={rem.id} onClick={function() { toggleRemark(s.id, q.id, rem.id); }} style={{ padding: isMobile ? "8px 12px" : "5px 9px", borderRadius: 14, cursor: "pointer", fontFamily: FONT_B, fontSize: isMobile ? 12 : 10, fontWeight: 600, background: act ? th.warningBg : "transparent", border: "1px solid " + (act ? th.warning + "40" : th.border), color: act ? th.warning : th.textMuted }}>{rem.icon + " " + rem.label}</button>; })}
+                    {(function() {
+                      var remB = REMARQUES_FIXES.find(function(r) { return r.id === "b"; });
+                      var bonusVal = currentBonusValue(remarks, s.id, q.id);
+                      var menuKey = q.id;
+                      return (
+                        <span style={{ position: "relative", display: "inline-block" }}>
+                          <button onClick={function(e) { e.stopPropagation(); var rect = e.currentTarget.getBoundingClientRect(); setBonusMenuPos({ top: rect.bottom + 4, left: rect.left }); setBonusMenuFor(function(prev) { return prev === menuKey ? null : menuKey; }); }}
+                            style={{ padding: isMobile ? "8px 12px" : "5px 9px", borderRadius: 14, cursor: "pointer", fontFamily: FONT_B, fontSize: isMobile ? 12 : 10, fontWeight: 600, background: bonusVal > 0 ? th.warningBg : "transparent", border: "1px solid " + (bonusVal > 0 ? th.warning + "40" : th.border), color: bonusVal > 0 ? th.warning : th.textMuted }}>
+                            {remB.icon + " " + remB.label + (bonusVal > 0 ? " +" + bonusVal : "")}
+                          </button>
+                          {bonusMenuFor === menuKey && bonusMenuPos && (
+                            <div onClick={function(e) { e.stopPropagation(); }} style={{ position: "fixed", top: bonusMenuPos.top, left: bonusMenuPos.left, background: th.card, border: "1px solid " + th.border, borderRadius: th.radiusSm, boxShadow: "0 4px 16px rgba(0,0,0,0.18)", zIndex: 200, overflow: "hidden", minWidth: 90 }}>
+                              {[1, 0.5].map(function(v, vi) { return (
+                                <button key={v} onClick={function() { setBonusRemark(s.id, q.id, v); }}
+                                  style={{ display: "block", width: "100%", padding: "6px 10px", background: bonusVal === v ? th.warningBg : "transparent", border: "none", borderBottom: vi === 0 ? "1px solid " + th.border : "none", color: bonusVal === v ? th.warning : th.text, fontFamily: FONT_B, fontSize: 11, textAlign: "left", cursor: "pointer" }}>
+                                  {"+" + v + " pt"}
+                                </button>
+                              ); })}
+                            </div>
+                          )}
+                        </span>
+                      );
+                    })()}
                   </div>
                   {/* Case "traitée" — visible seulement si aucun item n'est coché */}
                   <div style={{ display: "flex", gap: 4, alignItems: "center", marginTop: 4 }}>
@@ -1349,8 +1395,8 @@ export default function App() {
         {mode === "stats" && exam && <div style={{ maxWidth: 760, margin: "0 auto" }}>
           <div style={{ display: "flex", gap: 4, marginBottom: 8, flexWrap: "wrap", alignItems: "center" }}>
             <div style={{ flex: 1 }} />
-            {["general", "exercices"].map(function(t) { return (
-              <button key={t} onClick={function() { setTab(t); }} style={{ padding: "6px 10px", borderRadius: th.radiusSm, cursor: "pointer", fontFamily: FONT_B, fontSize: 11, fontWeight: 600, background: tab === t ? th.accent + "18" : "transparent", border: "1px solid " + (tab === t ? th.accent + "40" : th.border), color: tab === t ? th.accent : th.textMuted }}>{t === "general" ? "Général" : "Exercices"}</button>); })}
+            {["general", "exercices", "classement"].map(function(t) { return (
+              <button key={t} onClick={function() { setTab(t); }} style={{ padding: "6px 10px", borderRadius: th.radiusSm, cursor: "pointer", fontFamily: FONT_B, fontSize: 11, fontWeight: 600, background: tab === t ? th.accent + "18" : "transparent", border: "1px solid " + (tab === t ? th.accent + "40" : th.border), color: tab === t ? th.accent : th.textMuted }}>{t === "general" ? "Général" : t === "exercices" ? "Exercices" : "Classement"}</button>); })}
           </div>
 
           {tab === "general" && <div>
@@ -1371,7 +1417,7 @@ export default function App() {
           </div>}
           {tab === "exercices" && exam.exercises.map(function(exx, i) {
             var isItems = !exx.type || exx.type === "items";
-            var scores = corriges.map(function(s) { return exerciseScore(grades, notesBrutes, palierGrades, palierAjust, s.id, exx); });
+            var scores = corriges.map(function(s) { return exerciseScoreWithRemarks(grades, notesBrutes, palierGrades, palierAjust, remarks, s.id, exx); });
             var exT = scores.length ? scores[0].total : (exx.type === "brut" ? (parseFloat(exx.bareme) || 0) : 0);
             var enotes = scores.map(function(sc) { return sc.earned; }).sort(function(a, b) { return a - b; });
             var copies = corriges.filter(function(s) {
@@ -1437,6 +1483,39 @@ export default function App() {
             );
           })}
 
+          {tab === "classement" && (function() {
+            var withNotes = corriges.map(function(ss) { return { student: ss, note: getFinalPts(ss.id) }; });
+            var byNote = withNotes.slice().sort(function(a, b) { return b.note - a.note; });
+            var rangMap2 = {}; var rr = 1;
+            byNote.forEach(function(r, i) { if (i > 0 && r.note < byNote[i - 1].note) rr = i + 1; rangMap2[r.student.id] = rr; });
+            var sorted = withNotes.slice().sort(csortMode === "alpha"
+              ? function(a, b) { var na = (a.student.nom + a.student.prenom).toLowerCase(); var nb2 = (b.student.nom + b.student.prenom).toLowerCase(); return na < nb2 ? -1 : na > nb2 ? 1 : 0; }
+              : function(a, b) { return b.note - a.note; });
+            return (
+              <div style={{ background: th.card, borderRadius: th.radius, border: "1px solid " + th.border, padding: 12, boxShadow: th.shadow }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, fontFamily: FONT, flex: 1 }}>{"Classement (" + corriges.length + " él.)"}</div>
+                  {["rang", "alpha"].map(function(m) { return (
+                    <button key={m} onClick={function() { setCsortMode(m); }}
+                      style={{ padding: "3px 9px", borderRadius: 10, cursor: "pointer", fontFamily: FONT_B, fontSize: 10, fontWeight: 600, background: csortMode === m ? th.accent + "18" : "transparent", border: "1px solid " + (csortMode === m ? th.accent + "40" : th.border), color: csortMode === m ? th.accent : th.textMuted }}>
+                      {m === "rang" ? "Par rang" : "A → Z"}
+                    </button>); })}
+                </div>
+                {sorted.map(function(r, i) {
+                  var rang2 = rangMap2[r.student.id];
+                  var ratio = et > 0 ? r.note / et : 0;
+                  return (
+                    <div key={r.student.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 2px", borderBottom: i < sorted.length - 1 ? "1px solid " + th.border : "none" }}>
+                      <span style={{ fontFamily: MONO, fontSize: 10, color: th.textDim, minWidth: 18, textAlign: "right" }}>{rang2}</span>
+                      <span style={{ flex: 1, fontSize: 11, fontWeight: 500, fontFamily: FONT_B }}>{r.student.prenom} <span style={{ fontVariant: "small-caps" }}>{r.student.nom}</span></span>
+                      <span style={{ fontFamily: MONO, fontSize: 12, fontWeight: 700, minWidth: 60, textAlign: "right", color: ratio < 0.4 ? th.danger : ratio < 0.6 ? th.warning : th.success }}>{fmt1(r.note) + " / " + et}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
+
         </div>}
 
         {/* ═══ VUE D'ENSEMBLE ═══ */}
@@ -1450,6 +1529,7 @@ export default function App() {
               notesBrutes={notesBrutes}
               palierGrades={palierGrades}
               palierAjust={palierAjust}
+              remarks={remarks}
               th={th}
               FONT={FONT}
               FONT_B={FONT_B}

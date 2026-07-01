@@ -8,7 +8,7 @@
 // ═══════════════════════════════════════════════════════════════════
 
 import { useState, useRef } from "react";
-import { gradeKey, palierKey, treatedKey, exerciseScore } from "./utils/calculs";
+import { gradeKey, palierKey, treatedKey, exerciseScoreWithRemarks } from "./utils/calculs";
 
 // Points obtenus par un étudiant sur une question
 function questionObtenu(grades, studentId, question) {
@@ -38,10 +38,11 @@ function cellColor(ratio, th) {
 
 // ── Composant principal ──────────────────────────────────────────
 
-function OverviewTab({ exam, students, grades, notesBrutes, palierGrades, palierAjust, th, FONT, FONT_B, MONO, onNavigate }) {
+function OverviewTab({ exam, students, grades, notesBrutes, palierGrades, palierAjust, remarks, th, FONT, FONT_B, MONO, onNavigate }) {
   var nb = notesBrutes || {};
   var pg = palierGrades || {};
   var pa = palierAjust || {};
+  var rm = remarks || {};
 
   // États éphémères locaux
   var _granularity = useState("question");
@@ -131,11 +132,11 @@ function OverviewTab({ exam, students, grades, notesBrutes, palierGrades, palier
   function getColValue(studentId, col) {
     if (col.type === "question") return questionObtenu(grades, studentId, col.question);
     if (col.type === "item") return itemObtenu(grades, studentId, col.item);
-    return exerciseScore(grades, nb, pg, pa, studentId, col.ex).earned;
+    return exerciseScoreWithRemarks(grades, nb, pg, pa, rm, studentId, col.ex).earned;
   }
 
   function getStudentTotal(studentId) {
-    return exam.exercises.reduce(function(sum, ex) { return sum + exerciseScore(grades, nb, pg, pa, studentId, ex).earned; }, 0);
+    return exam.exercises.reduce(function(sum, ex) { return sum + exerciseScoreWithRemarks(grades, nb, pg, pa, rm, studentId, ex).earned; }, 0);
   }
 
   var examMax = cols.reduce(function(s, c) { return s + c.max; }, 0);
