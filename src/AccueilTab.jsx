@@ -1,6 +1,13 @@
 import { useState } from "react";
 import { APP_VERSION } from "./config/settings";
-import { studentTotal, examTotal, noteSur100 } from "./utils/calculs";
+import { studentTotal, examTotal, remarquesAjustement } from "./utils/calculs";
+
+/** Note totale brute d'un élève sur un DS : total des exercices + ajustement remarques/malus manuel, clampé à 0 */
+function studentFinalTotal(grades, notesBrutes, palierGrades, palierAjust, remarks, malusManuel, studentId, exam) {
+  var brut = studentTotal(grades, notesBrutes, palierGrades, palierAjust, studentId, exam);
+  var adjust = remarquesAjustement(remarks, studentId, exam) + ((malusManuel && malusManuel[studentId]) || 0);
+  return Math.max(0, brut + adjust);
+}
 
 function countCorriges(exam, students, grades, notesBrutes, palierGrades) {
   if (!exam || !students) return 0;
@@ -23,30 +30,27 @@ function corrigedStudents(exam, students, grades, notesBrutes, palierGrades) {
   });
 }
 
-function calcClassAvg(exam, students, grades, notesBrutes, palierGrades, palierAjust) {
+/** Moyenne de la classe en points bruts (pas de normalisation en CHECK-lite) */
+function calcClassAvg(exam, students, grades, notesBrutes, palierGrades, palierAjust, remarks, malusManuel) {
   if (!exam || !students || students.length === 0) return null;
   var presents = corrigedStudents(exam, students, grades, notesBrutes, palierGrades);
   if (presents.length === 0) return null;
-  var max = examTotal(exam);
-  if (max === 0) return null;
   var sum = 0;
-  presents.forEach(function(s) { sum += noteSur100(studentTotal(grades, notesBrutes, palierGrades, palierAjust, s.id, exam), max); });
+  presents.forEach(function(s) { sum += studentFinalTotal(grades, notesBrutes, palierGrades, palierAjust, remarks, malusManuel, s.id, exam); });
   return sum / presents.length;
 }
 
-function calcMinMax(exam, students, grades, notesBrutes, palierGrades, palierAjust) {
+function calcMinMax(exam, students, grades, notesBrutes, palierGrades, palierAjust, remarks, malusManuel) {
   if (!exam || !students || students.length === 0) return null;
-  var max = examTotal(exam);
-  if (max === 0) return null;
   var presents = corrigedStudents(exam, students, grades, notesBrutes, palierGrades);
   if (presents.length === 0) return null;
-  var notes = presents.map(function(s) { return noteSur100(studentTotal(grades, notesBrutes, palierGrades, palierAjust, s.id, exam), max); });
+  var notes = presents.map(function(s) { return studentFinalTotal(grades, notesBrutes, palierGrades, palierAjust, remarks, malusManuel, s.id, exam); });
   return { min: Math.min.apply(null, notes), max: Math.max.apply(null, notes) };
 }
 
 function fmt1(n) { return (Math.round(n * 10) / 10).toFixed(1); }
 
-function AccueilTab({ th, FONT_B, MONO, profiles, activeProfileId, PROFILE_COLORS, exams, students, grades, notesBrutes, palierGrades, palierAjust, setMode, switchProfile, setShowProfileMenu, setActiveExamId, askConfirm, onFullBackup, onOpenRestore, backupBusy }) {
+function AccueilTab({ th, FONT_B, MONO, profiles, activeProfileId, PROFILE_COLORS, exams, students, grades, notesBrutes, palierGrades, palierAjust, remarks, malusManuel, setMode, switchProfile, setShowProfileMenu, setActiveExamId, askConfirm, onFullBackup, onOpenRestore, backupBusy }) {
   var _ddOpen = useState(false); var ddOpen = _ddOpen[0]; var setDdOpen = _ddOpen[1];
 
   var profileIndex = profiles.findIndex(function(p) { return p.id === activeProfileId; });
@@ -54,22 +58,15 @@ function AccueilTab({ th, FONT_B, MONO, profiles, activeProfileId, PROFILE_COLOR
   var activeProfile = profiles[profileIndex] || {};
 
   // Stats globales
-  var avgSum = 0;
-  var avgCount = 0;
-  exams.forEach(function(ex) {
-    var avg = calcClassAvg(ex, students, grades, notesBrutes, palierGrades, palierAjust);
-    if (avg !== null) { avgSum += avg; avgCount++; }
-  });
-  var moyenneGlobale = avgCount > 0 ? avgSum / avgCount : null;
-
   var lastExam = exams.length > 0 ? exams[exams.length - 1] : null;
   var prevExams = exams.length > 1 ? exams.slice(0, exams.length - 1).slice(-5).reverse() : [];
 
   var lastCorriges = lastExam ? countCorriges(lastExam, students, grades, notesBrutes, palierGrades) : 0;
   var tauxCorrection = students.length > 0 ? (lastCorriges / students.length) * 100 : 0;
 
-  var lastAvg = lastExam ? calcClassAvg(lastExam, students, grades, notesBrutes, palierGrades, palierAjust) : null;
-  var lastMM = lastExam ? calcMinMax(lastExam, students, grades, notesBrutes, palierGrades, palierAjust) : null;
+  var lastAvg = lastExam ? calcClassAvg(lastExam, students, grades, notesBrutes, palierGrades, palierAjust, remarks, malusManuel) : null;
+  var lastMM = lastExam ? calcMinMax(lastExam, students, grades, notesBrutes, palierGrades, palierAjust, remarks, malusManuel) : null;
+  var lastExamMax = lastExam ? examTotal(lastExam) : 0;
 
   var cardStyle = { background: th.card, border: "1px solid " + th.border, borderRadius: th.radiusSm, padding: "16px 18px" };
   var labelStyle = { fontSize: 11, color: th.textMuted, fontFamily: FONT_B, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 };
@@ -119,8 +116,8 @@ function AccueilTab({ th, FONT_B, MONO, profiles, activeProfileId, PROFILE_COLOR
         </div>
       </div>
 
-      {/* STATS GLOBALES — 4 cartes */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 20 }}>
+      {/* STATS GLOBALES — 3 cartes */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 20 }}>
         {/* DS archivés */}
         <div style={cardStyle}>
           <div style={labelStyle}>{"DS archivés"}</div>
@@ -130,16 +127,6 @@ function AccueilTab({ th, FONT_B, MONO, profiles, activeProfileId, PROFILE_COLOR
         <div style={cardStyle}>
           <div style={labelStyle}>{"Élèves suivis"}</div>
           <div style={bigNumStyle}>{students.length}</div>
-        </div>
-        {/* Moyenne générale */}
-        <div style={cardStyle}>
-          <div style={labelStyle}>{"Moyenne générale"}</div>
-          <div style={bigNumStyle}>{moyenneGlobale !== null ? fmt1(moyenneGlobale) : "—"}</div>
-          {moyenneGlobale !== null && (
-            <div style={{ marginTop: 8, height: 4, borderRadius: 2, background: "rgba(0,0,0,0.08)", overflow: "hidden" }}>
-              <div style={{ height: "100%", width: moyenneGlobale + "%", background: profileColor, borderRadius: 2 }} />
-            </div>
-          )}
         </div>
         {/* Taux de correction */}
         <div style={cardStyle}>
@@ -191,7 +178,7 @@ function AccueilTab({ th, FONT_B, MONO, profiles, activeProfileId, PROFILE_COLOR
                 <div style={{ background: th.surface, borderRadius: th.radiusSm, padding: "8px 10px", textAlign: "center" }}>
                   <div style={{ fontSize: 10, color: th.textMuted, marginBottom: 2 }}>{"Moyenne"}</div>
                   <div style={{ fontSize: 16, fontWeight: 700, color: th.text, fontFamily: MONO }}>{lastAvg !== null ? fmt1(lastAvg) : "—"}</div>
-                  {lastAvg !== null && <div style={{ fontSize: 9, color: th.textMuted, marginTop: 1 }}>{"/100"}</div>}
+                  {lastAvg !== null && <div style={{ fontSize: 9, color: th.textMuted, marginTop: 1 }}>{"/ " + lastExamMax + " pts"}</div>}
                 </div>
                 <div style={{ background: th.surface, borderRadius: th.radiusSm, padding: "8px 10px", textAlign: "center" }}>
                   <div style={{ fontSize: 10, color: th.textMuted, marginBottom: 2 }}>{"Étendue"}</div>
@@ -229,7 +216,7 @@ function AccueilTab({ th, FONT_B, MONO, profiles, activeProfileId, PROFILE_COLOR
           ) : (
             <div style={{ ...cardStyle, padding: 0, overflow: "hidden" }}>
               {prevExams.map(function(ex, i) {
-                var avg = calcClassAvg(ex, students, grades, notesBrutes, palierGrades, palierAjust);
+                var avg = calcClassAvg(ex, students, grades, notesBrutes, palierGrades, palierAjust, remarks, malusManuel);
                 var corriges = countCorriges(ex, students, grades, notesBrutes, palierGrades);
                 var isComplete = corriges >= students.length;
                 return (
@@ -242,7 +229,7 @@ function AccueilTab({ th, FONT_B, MONO, profiles, activeProfileId, PROFILE_COLOR
                     </div>
                     <div style={{ textAlign: "right", flexShrink: 0 }}>
                       <div style={{ fontSize: 13, fontWeight: 700, color: th.text, fontFamily: MONO }}>{avg !== null ? fmt1(avg) : "—"}</div>
-                      {avg !== null && <div style={{ fontSize: 9, color: th.textMuted }}>{"/100"}</div>}
+                      {avg !== null && <div style={{ fontSize: 9, color: th.textMuted }}>{"/ " + examTotal(ex) + " pts"}</div>}
                     </div>
                     <span style={{ width: 8, height: 8, borderRadius: "50%", background: isComplete ? "#22c55e" : "#f59e0b", flexShrink: 0 }} title={isComplete ? "Complet" : "Copies manquantes"} />
                   </div>

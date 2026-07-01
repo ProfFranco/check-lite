@@ -36,7 +36,7 @@ check-app-lite/
     │   ├── settings.js        ← APP_VERSION, REMARQUES_FIXES (3 remarques en dur)
     │   └── theme.js           ← Thème clair/sombre/jeune (palettes)
     └── utils/
-        ├── calculs.js         ← Scores, remarques, note/100 — moteur de calcul complet
+        ├── calculs.js         ← Scores, remarques, note brute totale — moteur de calcul complet
         ├── db.js              ← Persistance IndexedDB (open, load, save, profils)
         └── backup.js (+ test) ← Sauvegarde/restauration multi-profils
 ```
@@ -54,9 +54,9 @@ Fichiers **supprimés** par rapport à CHECK (n'existent pas dans ce dépôt) : 
   - **Desktop** (largeur ≥ 1024px) : toutes les questions/compétences d'un exercice affichées en même temps ; navigation "◄ Ex. préc. / Ex. suiv. ►".
   - **Tablette/mobile** (< 1024px) : une seule question ou compétence affichée à la fois, avec indicateur "Question X/N" ou "Compétence X/N", boutons "◄ Précédent / Suivant ►", et swipe gauche/droite. Le passage au bout de la liste avance automatiquement à l'exercice suivant, puis à l'élève suivant.
 - **Onglet Vue d'ensemble** : tableau croisé élèves × questions/items (granularité togglable), ou une colonne unique pour les exercices "brut"/"paliers". Toggle "✓ Corrigés seulement", tri par clic sur colonne, clic sur cellule → bascule vers Correction.
-- **Onglet Stats** : deux sous-onglets seulement — **Général** (moyenne/médiane/min/max/σ sur 100, histogramme de distribution) et **Exercices** (histogramme + détail par question pour les exercices "items", histogramme seul pour "brut"/"paliers"). Pas de sous-onglet Classement, pas de compétences, pas de progression multi-DS.
+- **Onglet Stats** : deux sous-onglets seulement — **Général** (moyenne/médiane/min/max/σ en points bruts, histogramme de distribution par point) et **Exercices** (histogramme + détail par question pour les exercices "items", histogramme seul pour "brut"/"paliers"). Pas de sous-onglet Classement, pas de compétences, pas de progression multi-DS.
 - **Onglet Sauvegarde** : réduit à deux boutons — "💾 Sauvegarde complète" (tous profils, JSON) et "📂 Restaurer une sauvegarde" (modes Remplacer/Fusionner). Les boutons 💾 Sauver / 📂 Charger (JSON du profil courant) restent dans l'en-tête, hors de cet onglet.
-- **Tableau de bord** (`AccueilTab`) : cartes stats globales (DS archivés, élèves suivis, moyenne générale /100, taux de correction), dernier DS + historique. Pied de page réduit à la version de l'app (plus de lien CHANGELOG).
+- **Tableau de bord** (`AccueilTab`) : cartes stats globales (DS archivés, élèves suivis, taux de correction — pas de moyenne générale inter-DS, voir plus bas), dernier DS + historique (moyenne/étendue en points bruts, par DS). Pied de page réduit à la version de l'app (plus de lien CHANGELOG).
 - **Zoom interface**, **3 thèmes** (clair/sombre/jeune), **multi-profils** : inchangés par rapport à CHECK.
 - **Mode debug, Aide, À propos** : supprimés (pas adaptés à cet usage).
 
@@ -110,7 +110,7 @@ earned += clamp(baremeDuPalierSélectionné + ajustement, 0, baremeMaxDeLaCompet
 
 ---
 
-## Remarques fixes et note sur 100
+## Remarques fixes et note brute totale (pas de /100)
 
 Trois remarques **non configurables** (`REMARQUES_FIXES` dans `config/settings.js`), attachées par question (exercices "items") ou par exercice entier (exercices "brut"/"paliers", qui jouent le rôle de "question unique" pour le stockage des remarques — clé `remarks[studentId__targetId]`, `targetId` = id de question ou d'exercice) :
 
@@ -122,7 +122,9 @@ Trois remarques **non configurables** (`REMARQUES_FIXES` dans `config/settings.j
 
 `remarquesAjustement(remarks, studentId, exam)` retourne l'ajustement net en points. Le **malus manuel** (`malusManuel[studentId]`, en points, +/-) s'additionne au même ajustement.
 
-**Note finale** : `noteSur100(earned, total) = (earned / total) * 100` — règle de trois simple, appliquée partout (héros Correction, Stats, Vue d'ensemble, Accueil). Pas de normalisation, pas de choix de méthode. Le "brut" affiché dans le héros est le total **avant** ajustement remarques/malus ; la note /100 l'inclut (clampée à 0 minimum).
+**Il n'y a pas de note normalisée /100 dans CHECK-lite** (retirée après le round 3 — voir historique). La seule note qui fait foi est la **note brute totale** : `clamp(studentTotal(exam) + remarquesAjustement + malusManuel, 0, +∞)`, affichée partout en points (`X / maxTotal pts`) — héros Correction (grand nombre dominant, plus de radar ni de %), classement (par points, équivalent à un tri par % puisque le barème est le même pour tous), Stats Général (moyenne/médiane/min/max/σ en points, histogramme de distribution par point), Vue d'ensemble (déjà en points), Accueil (moyenne/étendue par DS en points — la carte "Moyenne générale" inter-DS a été retirée du tableau de bord, un total brut n'ayant de sens que DS par DS puisque les barèmes diffèrent d'un DS à l'autre).
+
+**Cas d'usage brevet — rédaction à deux barèmes** : si l'épreuve de rédaction a deux barèmes possibles selon l'élève, on crée simplement **deux exercices distincts** (ex. "Rédaction — barème A" et "Rédaction — barème B") et on ne corrige que celui qui s'applique à chaque élève ; l'autre reste à 0 pour cet élève. Aucun mécanisme d'exercice "non applicable" n'existe — c'est un choix assumé pour rester simple, rendu possible par le fait que la note ne soit plus un pourcentage (un exercice non fait qui reste à 0 fausserait fortement une note /100, beaucoup moins un total en points brut lu avec le détail par exercice à côté).
 
 ---
 
@@ -189,6 +191,10 @@ Meta-base `check-app-profiles` séparée (multi-profils), inchangée par rapport
 
 ## Historique
 
-Fork créé à partir de `check-app` (CHECK v1.42) en juillet 2026, en une session de retrait de fonctionnalités + ajout des types d'exercice "brut"/"paliers" + remarques fixes en points + note/100, suivie d'une session de correctifs (bug `updPath`, suppression Classement/Aide/À propos, navigation tablette/mobile pas-à-pas, bonus/malus manuel par compétence).
+Fork créé à partir de `check-app` (CHECK v1.42) en juillet 2026 :
+1. Retrait de fonctionnalités + ajout des types d'exercice "brut"/"paliers" + remarques fixes en points + note/100.
+2. Correctifs : bug `updPath`, suppression Classement/Aide/À propos, navigation tablette/mobile pas-à-pas.
+3. Bonus/malus manuel par compétence (paliers), suppression Aide/À propos, doc de référence.
+4. **Retrait complet de la note /100** : seule la note brute totale fait foi (voir section dédiée) ; carte "Moyenne générale" retirée de l'Accueil.
 
 Pas de journal de session détaillé comme `CONTEXTE_CHECK.md` (pas nécessaire à ce stade — projet plus petit, un seul contributeur). À réévaluer si le projet grandit.

@@ -16,7 +16,7 @@ import {
 import { lightTheme, darkTheme, youngTheme, FONT_TITLE, FONT_BODY, FONT_MONO, FONTS_URL } from "./config/theme";
 import {
   uid, gradeKey, remarkKey, palierKey, clamp, competenceMaxBareme,
-  questionScore, exerciseScore, studentTotal, examTotal, noteSur100,
+  questionScore, exerciseScore, studentTotal, examTotal,
   remarquesAjustement, exercisePctAbsolute, exercisePctRelative,
   importCSV, downloadFile, treatedKey, validateState,
 } from "./utils/calculs";
@@ -291,7 +291,7 @@ export default function App() {
     });
   }, [students, grades, notesBrutes, palierGrades, exam]);
 
-  // ─── Scores (bruts + ajustement remarques/malus manuel + note /100) ───
+  // ─── Scores (bruts + ajustement remarques/malus manuel) ───
   var scoreData = useMemo(function() {
     if (!exam || !corriges.length) return { map: {} };
     var map = {};
@@ -306,7 +306,6 @@ export default function App() {
   function getFinalPts(sid) { var e = scoreData.map[sid]; return e ? e.final : 0; }
   function getBrutPts(sid) { var e = scoreData.map[sid]; return e ? e.brut : 0; }
   function getAdjust(sid) { var e = scoreData.map[sid]; return e ? e.adjust : 0; }
-  function getNote100(sid) { return et > 0 ? noteSur100(getFinalPts(sid), et) : 0; }
   function fmt1(n) { return (Math.round(n * 10) / 10).toFixed(1); }
 
   var inp = { background: th.card, border: "1px solid " + th.border, color: th.text, borderRadius: 4, padding: "4px 8px", fontSize: 13, fontFamily: FONT_B, outline: "none" };
@@ -651,14 +650,14 @@ export default function App() {
   var stuTot = exam ? studentTotal(grades, notesBrutes, palierGrades, palierAjust, s.id, exam) : 0;
   var eAbsVals = exam ? exercisePctAbsolute(grades, notesBrutes, palierGrades, palierAjust, s.id, exam) : [];
   var eRelVals = exam ? exercisePctRelative(grades, notesBrutes, palierGrades, palierAjust, s.id, exam, students) : [];
-  var curBrut = stuTot;
   var remAdjust = exam ? remarquesAjustement(remarks, s.id, exam) : 0;
   var manMalus = malusManuel[s.id] || 0;
   var totalAdjust = remAdjust + manMalus;
-  var curNote = et > 0 ? noteSur100(Math.max(0, stuTot + totalAdjust), et) : 0;
+  var curNote = Math.max(0, stuTot + totalAdjust);
+  var curRatio = et > 0 ? curNote / et : 0;
 
-  // Ranking
-  var allNotesRanked = corriges.map(function(st) { return { id: st.id, note: getNote100(st.id) }; }).sort(function(a, b) { return b.note - a.note; });
+  // Ranking (par points bruts — équivalent à un classement par %, le barème étant le même pour tous)
+  var allNotesRanked = corriges.map(function(st) { return { id: st.id, note: getFinalPts(st.id) }; }).sort(function(a, b) { return b.note - a.note; });
   var rangMap = {}; var curRang = 1;
   allNotesRanked.forEach(function(item, i) { if (i > 0 && item.note < allNotesRanked[i - 1].note) curRang = i + 1; rangMap[item.id] = curRang; });
   var rang = rangMap[s.id] || "-";
@@ -670,7 +669,7 @@ export default function App() {
     : [];
 
   // Stats
-  var statNotes = corriges.map(function(ss) { return getNote100(ss.id); });
+  var statNotes = corriges.map(function(ss) { return getFinalPts(ss.id); });
   var statMoy = statNotes.length ? statNotes.reduce(function(a, b) { return a + b; }, 0) / statNotes.length : 0;
   var statSorted = statNotes.slice().sort(function(a, b) { return a - b; });
   var statMed = statSorted.length % 2 === 0 && statSorted.length ? (statSorted[statSorted.length / 2 - 1] + statSorted[statSorted.length / 2]) / 2 : (statSorted[Math.floor(statSorted.length / 2)] || 0);
@@ -1077,8 +1076,7 @@ export default function App() {
                 </div>
               </div>
               <div style={{ textAlign: "right", minWidth: 90 }}>
-                <div style={{ fontFamily: MONO, fontSize: 24, fontWeight: 700, color: curNote >= 70 ? th.success : curNote >= 50 ? th.warning : th.danger }}>{fmt1(curNote)}<span style={{ fontSize: 11, color: th.textDim }}>/100</span></div>
-                <div style={{ fontFamily: MONO, fontSize: 12, color: th.textDim }}>{"brut " + fmt1(curBrut) + "/" + et + " pts"}</div>
+                <div style={{ fontFamily: MONO, fontSize: 24, fontWeight: 700, color: curRatio >= 0.7 ? th.success : curRatio >= 0.5 ? th.warning : th.danger }}>{fmt1(curNote)}<span style={{ fontSize: 13, color: th.textDim }}>{" / " + et + " pts"}</span></div>
                 {totalAdjust !== 0 && <div style={{ fontFamily: MONO, fontSize: 11, fontWeight: 700, color: totalAdjust > 0 ? th.success : th.danger }}>{(totalAdjust > 0 ? "+" : "") + totalAdjust + " pt"}</div>}
               </div>
               <div onClick={function() { if (si < students.length - 1) { setSi(si + 1); setEi(0); setQi(0); } }} style={{ fontSize: 18, color: si === students.length - 1 ? th.textDim : th.textMuted, cursor: "pointer", padding: "0 4px", userSelect: "none" }}>{"▸"}</div>
@@ -1360,16 +1358,15 @@ export default function App() {
             {[{ l: "Moy", v: statMoy, c: th.accent }, { l: "Méd", v: statMed, c: th.violet }, { l: "Min", v: statMin, c: th.danger }, { l: "Max", v: statMax, c: th.success }, { l: "σ", v: statSigma, c: th.textMuted }].map(function(x) { return (
                 <div key={x.l} style={{ background: th.card, borderRadius: th.radiusSm, border: "1px solid " + th.border, padding: "7px 5px", textAlign: "center", boxShadow: th.shadow }}>
                   <div style={{ fontSize: 9, color: th.textMuted, fontFamily: FONT_B }}>{x.l}</div>
-                  <div style={{ fontSize: 18, fontWeight: 800, fontFamily: MONO, color: x.c }}>{x.v.toFixed(1)}<span style={{ fontSize: 9, color: th.textDim }}>/100</span></div>
+                  <div style={{ fontSize: 18, fontWeight: 800, fontFamily: MONO, color: x.c }}>{x.v.toFixed(1)}<span style={{ fontSize: 9, color: th.textDim }}>{"/" + et}</span></div>
                 </div>); })}
             </div>
             <div style={{ background: th.card, borderRadius: th.radius, border: "1px solid " + th.border, padding: 12, boxShadow: th.shadow }}>
-              <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6, fontFamily: FONT }}>{"Distribution /100"}</div>
-              <Histo bins={Array.from({ length: 21 }, function(_, i) {
-                var lo = i * 5;
-                return { note: lo, count: statNotes.filter(function(nn) { return Math.min(20, Math.floor(nn / 5)) === i; }).length };
-              })} colorFn={function(nn) { return nn < 40 ? th.danger + "aa" : nn < 60 ? th.warning + "aa" : th.success + "aa"; }} th={th}
-                moyLine={statMoy / 5} medLine={statMed / 5} />
+              <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6, fontFamily: FONT }}>{"Distribution (points bruts / " + et + ")"}</div>
+              <Histo bins={Array.from({ length: Math.ceil(et) + 1 }, function(_, i) {
+                return { note: i, count: statNotes.filter(function(nn) { return Math.min(Math.ceil(et), Math.floor(nn)) === i; }).length };
+              })} colorFn={function(nn) { return et > 0 && nn < et * 0.4 ? th.danger + "aa" : et > 0 && nn < et * 0.6 ? th.warning + "aa" : th.success + "aa"; }} th={th}
+                moyLine={statMoy} medLine={statMed} />
             </div>
           </div>}
           {tab === "exercices" && exam.exercises.map(function(exx, i) {
@@ -1482,6 +1479,8 @@ export default function App() {
             notesBrutes={notesBrutes}
             palierGrades={palierGrades}
             palierAjust={palierAjust}
+            remarks={remarks}
+            malusManuel={malusManuel}
             setMode={setMode}
             switchProfile={switchProfile}
             setShowProfileMenu={setShowProfileMenu}

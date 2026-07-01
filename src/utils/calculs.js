@@ -99,11 +99,6 @@ export function examTotal(exam) {
   }, 0);
 }
 
-/** Note ramenée sur 100 (règle de trois simple) */
-export function noteSur100(earned, total) {
-  return total === 0 ? 0 : (earned / total) * 100;
-}
-
 // ─── Remarques fixes : ajustement en points ──────────────────────
 
 /** Liste des identifiants "porteurs de remarques" d'un exam : une
