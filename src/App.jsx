@@ -7,7 +7,7 @@
 // Le générateur LaTeX dans src/utils/latex.js
 // ═══════════════════════════════════════════════════════════════════
 
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 
 // ─── Imports depuis les modules du projet ────────────────────────
 import {
@@ -21,7 +21,7 @@ import {
   importCSV, downloadFile, treatedKey, validateState,
 } from "./utils/calculs";
 import { loadDB, saveDB, loadMeta, saveMeta, initProfiles, profileDBName, openNamedDB } from "./utils/db";
-import { Histo, PBar, MiniRadarEx } from "./components/Charts";
+import { Histo, PBar } from "./components/Charts";
 import HelpTab from "./HelpTab";
 import SauvegardeTab from "./SauvegardeTab";
 import OverviewTab from "./OverviewTab";
@@ -63,6 +63,7 @@ export default function App() {
   var _malusManuel = useState({}); var setMalusManuel = _malusManuel[1]; var malusManuel = _malusManuel[0];
   var _si = useState(0); var setSi = _si[1]; var si = _si[0];
   var _ei = useState(0); var setEi = _ei[1]; var ei = _ei[0];
+  var _qi = useState(0); var setQi = _qi[1]; var qi = _qi[0];
   var _uiScale = useState(1); var setUiScale = _uiScale[1]; var uiScale = _uiScale[0];
   var _showSearch = useState(false); var setShowSearch = _showSearch[1]; var showSearch = _showSearch[0];
   var _searchTerm = useState(""); var setSearchTerm = _searchTerm[1]; var searchTerm = _searchTerm[0];
@@ -73,7 +74,6 @@ export default function App() {
   // Prep state
   var _collapsed = useState({}); var setCollapsed = _collapsed[1]; var collapsed = _collapsed[0];
   var _collapsedExams = useState({}); var setCollapsedExams = _collapsedExams[1]; var collapsedExams = _collapsedExams[0];
-  var _csortMode = useState("rang"); var csortMode = _csortMode[0]; var setCsortMode = _csortMode[1];
   var _progressionStudentId = useState(null); var progressionStudentId = _progressionStudentId[0]; var setProgressionStudentId = _progressionStudentId[1];
   var _progressionViewMode = useState("courbe"); var progressionViewMode = _progressionViewMode[0]; var setProgressionViewMode = _progressionViewMode[1];
   var _confirmDelete = useState(null); var setConfirmDelete = _confirmDelete[1]; var confirmDelete = _confirmDelete[0];
@@ -169,15 +169,15 @@ export default function App() {
       var numEx = exam ? exam.exercises.length : 0;
       if (e.key === "ArrowLeft") {
         e.preventDefault();
-        if (ei > 0) { setEi(ei - 1); }
-        else if (si > 0) { setSi(si - 1); setEi(numEx - 1); }
+        if (ei > 0) { setEi(ei - 1); setQi(0); }
+        else if (si > 0) { setSi(si - 1); setEi(numEx - 1); setQi(0); }
       } else if (e.key === "ArrowRight") {
         e.preventDefault();
-        if (ei < numEx - 1) { setEi(ei + 1); }
-        else if (si < students.length - 1) { setSi(si + 1); setEi(0); }
+        if (ei < numEx - 1) { setEi(ei + 1); setQi(0); }
+        else if (si < students.length - 1) { setSi(si + 1); setEi(0); setQi(0); }
       } else if (e.key >= "1" && e.key <= "9") {
         var idx = parseInt(e.key, 10) - 1;
-        if (idx < numEx) setEi(idx);
+        if (idx < numEx) { setEi(idx); setQi(0); }
       }
     }
     window.addEventListener("keydown", handleKey);
@@ -440,6 +440,12 @@ export default function App() {
 
   // ─── Exam editor helpers ───
   function deepClone(obj) { return JSON.parse(JSON.stringify(obj)); }
+  function updPath(exam2, path, val) {
+    var n = deepClone(exam2); var t = n;
+    for (var i = 0; i < path.length - 1; i++) t = t[path[i]];
+    t[path[path.length - 1]] = val;
+    return n;
+  }
   function addExercise(type) {
     if (!exam) return;
     type = type || "items";
@@ -546,7 +552,7 @@ export default function App() {
     setStudents(updated);
     setNewStudentNom(""); setNewStudentPrenom("");
     setShowAddStudent(false);
-    setSi(updated.length - 1); setEi(0);
+    setSi(updated.length - 1); setEi(0); setQi(0);
   }
 
   // ─── Saisie des notes (Correction) ───────────────────────────────
@@ -581,22 +587,52 @@ export default function App() {
     });
   }
 
-  // Swipe
-  var handleTouchStart = useCallback(function(e) { touchRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }; }, []);
-  var handleTouchEnd = useCallback(function(e) {
+  // ─── Navigation pas-à-pas (question/compétence courante, tablette/mobile) ───
+  function listLengthOf(ex) {
+    if (!ex) return 1;
+    if (ex.type === "paliers") return (ex.competences || []).length || 1;
+    if (ex.type === "brut") return 1;
+    return (ex.questions || []).length || 1;
+  }
+  function goNextStep() {
+    var len = listLengthOf(exCur);
+    if (len > 1 && qi < len - 1) { setQi(qi + 1); }
+    else if (exam && ei < exam.exercises.length - 1) { setEi(ei + 1); setQi(0); }
+    else if (si < students.length - 1) { setSi(si + 1); setEi(0); setQi(0); }
+    if (mainScrollRef.current) mainScrollRef.current.scrollTop = 0;
+  }
+  function goPrevStep() {
+    if (qi > 0) { setQi(qi - 1); }
+    else if (exam && ei > 0) {
+      var prevEx = exam.exercises[ei - 1];
+      setEi(ei - 1);
+      setQi(listLengthOf(prevEx) - 1);
+    } else if (si > 0) {
+      setSi(si - 1);
+      if (exam && exam.exercises.length) {
+        var lastIdx = exam.exercises.length - 1;
+        setEi(lastIdx);
+        setQi(listLengthOf(exam.exercises[lastIdx]) - 1);
+      }
+    }
+    if (mainScrollRef.current) mainScrollRef.current.scrollTop = 0;
+  }
+
+  // Swipe — sur tablette/mobile en Correction, navigue question/compétence par question/compétence
+  function handleTouchStart(e) { touchRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }; }
+  function handleTouchEnd(e) {
     var dx = e.changedTouches[0].clientX - touchRef.current.x;
     var dy = e.changedTouches[0].clientY - touchRef.current.y;
     if (Math.abs(dx) > 80 && Math.abs(dx) > Math.abs(dy) * 1.5) {
-      if (dx > 0 && si > 0) { setSi(si - 1); setEi(0); }
-      if (dx < 0 && si < students.length - 1) { setSi(si + 1); setEi(0); }
+      if (dx < 0) goNextStep(); else goPrevStep();
     }
-  }, [si, students.length]);
+  }
 
   // ─── Current student data (for correction mode) ───
   var safeIdx = si < students.length ? si : 0;
   var s = students[safeIdx] || { id: "none", nom: "", prenom: "" };
   // Réinitialiser si si dépasse le tableau (ajout/suppression d'élèves)
-  useEffect(function() { if (students.length > 0 && si >= students.length) setSi(0); }, [students.length, si]);
+  useEffect(function() { if (students.length > 0 && si >= students.length) { setSi(0); setEi(0); setQi(0); } }, [students.length, si]);
   useEffect(function() {
     if (progressionStudentId && !students.find(function(s) { return s.id === progressionStudentId; })) {
       setProgressionStudentId(null);
@@ -651,8 +687,8 @@ export default function App() {
 
   return (
     <div style={{ fontFamily: FONT_B, background: th.bg, color: th.text, height: "100vh", display: "flex", flexDirection: "column", overflowX: "hidden", maxWidth: "100vw", fontSize: "14px" }}
-         onTouchStart={isMobile && mode === "correct" ? handleTouchStart : undefined}
-         onTouchEnd={isMobile && mode === "correct" ? handleTouchEnd : undefined}
+         onTouchStart={isTouch && mode === "correct" ? handleTouchStart : undefined}
+         onTouchEnd={isTouch && mode === "correct" ? handleTouchEnd : undefined}
          onClick={function() { if (showProfileMenu) setShowProfileMenu(false); if (showDsMenu) setShowDsMenu(false); }}>
       <link href={FONTS_URL} rel="stylesheet" />
       <div style={{ position: "fixed", inset: 0, opacity: dark ? 0.025 : 0.035, backgroundImage: "repeating-linear-gradient(transparent, transparent 31px, " + th.ruledLine + " 31px, " + th.ruledLine + " 32px)", backgroundPosition: "0 8px", pointerEvents: "none", zIndex: 0 }} />
@@ -1007,7 +1043,7 @@ export default function App() {
             <div style={{ background: th.card, borderRadius: th.radius, border: "1px solid " + th.border, padding: 12, width: 340, boxShadow: "0 8px 32px rgba(0,0,0,0.2)" }} onClick={function(e) { e.stopPropagation(); }}>
               <input ref={searchInputRef} value={searchTerm} onChange={function(e) { setSearchTerm(e.target.value); }} placeholder="Chercher un élève" style={{ background: th.card, border: "1px solid " + th.border, color: th.text, borderRadius: 4, padding: "10px 12px", fontSize: 15, fontFamily: FONT_B, outline: "none", width: "100%", marginBottom: 6, boxSizing: "border-box" }} />
               {searchResults.map(function(o) { return (
-                <button key={o.st.id} onClick={function() { setSi(o.idx); setEi(0); setShowSearch(false); setSearchTerm(""); }}
+                <button key={o.st.id} onClick={function() { setSi(o.idx); setEi(0); setQi(0); setShowSearch(false); setSearchTerm(""); }}
                   style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "10px 12px", marginBottom: 2, borderRadius: th.radiusSm, cursor: "pointer", fontFamily: FONT_B, fontSize: 14, textAlign: "left", background: o.idx === si ? th.accentBg : "transparent", border: "1px solid " + (o.idx === si ? th.accent + "30" : th.border), color: th.text }}>
                   <span style={{ fontWeight: 600 }}>{o.st.prenom}</span> <span style={{ fontVariant: "small-caps" }}>{o.st.nom}</span>
                 </button>); })}
@@ -1029,36 +1065,39 @@ export default function App() {
           </div>}
 
           {/* Student card — héros */}
-          <div style={{ background: th.card, borderRadius: th.radius, border: "1px solid " + th.border, padding: "14px", marginBottom: 8, display: "flex", alignItems: "center", gap: 10, boxShadow: th.shadow, overflow: "hidden" }}>
-            <div onClick={function() { if (si > 0) { setSi(si - 1); setEi(0); } }} style={{ fontSize: 18, color: si === 0 ? th.textDim : th.textMuted, cursor: "pointer", padding: "0 4px", userSelect: "none" }}>{"◂"}</div>
-            <div style={{ flex: 1 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <div style={{ fontSize: 18, fontWeight: 700, fontFamily: FONT }}>{s.prenom} <span style={{ fontVariant: "small-caps", letterSpacing: "0.5px" }}>{s.nom}</span></div>
-                <button onClick={function() { setShowSearch(true); }} style={{ background: "none", border: "1px solid " + th.border, borderRadius: 4, padding: "2px 6px", cursor: "pointer", fontSize: 10, color: th.textDim, fontFamily: FONT_B }}>{"🔍"}</button>
-                <button onClick={function() { setShowAddStudent(true); }} style={{ background: "none", border: "1px solid " + th.border, borderRadius: 4, padding: "2px 6px", cursor: "pointer", fontSize: 10, color: th.textDim, fontFamily: FONT_B }} title="Ajouter un élève">{"+"}</button>
-              </div>
-              <div style={{ fontSize: 13, color: th.textMuted, fontFamily: FONT_B, marginTop: 2 }}>
-                {"Rang "}<b style={{ color: th.accent }}>{rang}</b>{"/" + presents.length}
-              </div>
-            </div>
-            <div style={{ textAlign: "right", minWidth: 90 }}>
-              <div style={{ fontFamily: MONO, fontSize: 24, fontWeight: 700, color: curNote >= 70 ? th.success : curNote >= 50 ? th.warning : th.danger }}>{fmt1(curNote)}<span style={{ fontSize: 11, color: th.textDim }}>/100</span></div>
-              <div style={{ fontFamily: MONO, fontSize: 12, color: th.textDim }}>{"brut " + fmt1(curBrut) + "/" + et + " pts"}</div>
-              {totalAdjust !== 0 && <div style={{ fontFamily: MONO, fontSize: 11, fontWeight: 700, color: totalAdjust > 0 ? th.success : th.danger }}>{(totalAdjust > 0 ? "+" : "") + totalAdjust + " pt"}</div>}
-            </div>
-            <div onClick={function() { if (si < students.length - 1) { setSi(si + 1); setEi(0); } }} style={{ fontSize: 18, color: si === students.length - 1 ? th.textDim : th.textMuted, cursor: "pointer", padding: "0 4px", userSelect: "none" }}>{"▸"}</div>
-          </div>
-
-          {/* Note par exercice */}
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 8 }}>
-            {exam.exercises.map(function(x) {
-              var sc = exerciseScore(grades, notesBrutes, palierGrades, s.id, x);
-              return (
-                <div key={x.id} style={{ padding: "4px 8px", borderRadius: th.radiusSm, border: "1px solid " + th.border, background: th.surface, fontSize: 10, fontFamily: FONT_B, color: th.textMuted }}>
-                  <span style={{ fontWeight: 600, color: th.text }}>{x.title}</span>{" : "}<span style={{ fontFamily: MONO }}>{fmt1(sc.earned) + "/" + fmt1(sc.total)}</span>
+          <div style={{ background: th.card, borderRadius: th.radius, border: "1px solid " + th.border, padding: "14px", marginBottom: 8, boxShadow: th.shadow, overflow: "hidden" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div onClick={function() { if (si > 0) { setSi(si - 1); setEi(0); setQi(0); } }} style={{ fontSize: 18, color: si === 0 ? th.textDim : th.textMuted, cursor: "pointer", padding: "0 4px", userSelect: "none" }}>{"◂"}</div>
+              <div style={{ flex: 1 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <div style={{ fontSize: 18, fontWeight: 700, fontFamily: FONT }}>{s.prenom} <span style={{ fontVariant: "small-caps", letterSpacing: "0.5px" }}>{s.nom}</span></div>
+                  <button onClick={function() { setShowSearch(true); }} style={{ background: "none", border: "1px solid " + th.border, borderRadius: 4, padding: "2px 6px", cursor: "pointer", fontSize: 10, color: th.textDim, fontFamily: FONT_B }}>{"🔍"}</button>
+                  <button onClick={function() { setShowAddStudent(true); }} style={{ background: "none", border: "1px solid " + th.border, borderRadius: 4, padding: "2px 6px", cursor: "pointer", fontSize: 10, color: th.textDim, fontFamily: FONT_B }} title="Ajouter un élève">{"+"}</button>
                 </div>
-              );
-            })}
+                <div style={{ fontSize: 13, color: th.textMuted, fontFamily: FONT_B, marginTop: 2 }}>
+                  {"Rang "}<b style={{ color: th.accent }}>{rang}</b>{"/" + presents.length}
+                </div>
+              </div>
+              <div style={{ textAlign: "right", minWidth: 90 }}>
+                <div style={{ fontFamily: MONO, fontSize: 24, fontWeight: 700, color: curNote >= 70 ? th.success : curNote >= 50 ? th.warning : th.danger }}>{fmt1(curNote)}<span style={{ fontSize: 11, color: th.textDim }}>/100</span></div>
+                <div style={{ fontFamily: MONO, fontSize: 12, color: th.textDim }}>{"brut " + fmt1(curBrut) + "/" + et + " pts"}</div>
+                {totalAdjust !== 0 && <div style={{ fontFamily: MONO, fontSize: 11, fontWeight: 700, color: totalAdjust > 0 ? th.success : th.danger }}>{(totalAdjust > 0 ? "+" : "") + totalAdjust + " pt"}</div>}
+              </div>
+              <div onClick={function() { if (si < students.length - 1) { setSi(si + 1); setEi(0); setQi(0); } }} style={{ fontSize: 18, color: si === students.length - 1 ? th.textDim : th.textMuted, cursor: "pointer", padding: "0 4px", userSelect: "none" }}>{"▸"}</div>
+            </div>
+
+            {/* Note par exercice — intégrée au héros, bien lisible */}
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 10, paddingTop: 10, borderTop: "1px solid " + th.border }}>
+              {exam.exercises.map(function(x) {
+                var sc = exerciseScore(grades, notesBrutes, palierGrades, s.id, x);
+                return (
+                  <div key={x.id} style={{ fontSize: 13, fontFamily: FONT_B, color: th.text }}>
+                    <span style={{ fontWeight: 700 }}>{x.title}</span>{" "}
+                    <span style={{ fontFamily: MONO, fontWeight: 700, color: sc.total > 0 && sc.earned >= sc.total * 0.5 ? th.success : th.warning }}>{fmt1(sc.earned) + "/" + fmt1(sc.total)}</span>
+                  </div>
+                );
+              })}
+            </div>
           </div>
 
           {/* Malus manuel */}
@@ -1078,7 +1117,7 @@ export default function App() {
             {exam.exercises.map(function(x, i) {
               var sc = exerciseScore(grades, notesBrutes, palierGrades, s.id, x);
               return (
-                <button key={x.id} onClick={function() { setEi(i); }} style={{ flex: 1, padding: "6px 3px", borderRadius: th.radiusSm, cursor: "pointer", fontFamily: FONT_B, fontSize: 10, fontWeight: 600, background: i === ei ? th.accent + "15" : "transparent", border: "1.5px solid " + (i === ei ? th.accent + "50" : th.border), color: i === ei ? th.accent : th.textMuted }}>
+                <button key={x.id} onClick={function() { setEi(i); setQi(0); }} style={{ flex: 1, padding: "6px 3px", borderRadius: th.radiusSm, cursor: "pointer", fontFamily: FONT_B, fontSize: 10, fontWeight: 600, background: i === ei ? th.accent + "15" : "transparent", border: "1.5px solid " + (i === ei ? th.accent + "50" : th.border), color: i === ei ? th.accent : th.textMuted }}>
                   <div>{x.title.length > 20 ? x.title.slice(0, 18) + "…" : x.title}</div>
                   <div style={{ fontSize: 9, fontFamily: MONO, opacity: 0.7 }}>{fmt1(sc.earned) + "/" + fmt1(sc.total)}</div>
                 </button>); })}
@@ -1110,7 +1149,31 @@ export default function App() {
           )}
 
           {/* Exercice type "Par Paliers" */}
-          {exCur && exCur.type === "paliers" && (
+          {exCur && exCur.type === "paliers" && isTouch && (function() {
+            var comp = (exCur.competences || [])[qi];
+            if (!comp) return null;
+            var sel = palierGrades[palierKey(s.id, exCur.id, comp.id)];
+            return (
+              <div style={{ background: th.card, borderRadius: th.radius, border: "1px solid " + th.border, padding: 14, marginBottom: 6, boxShadow: th.shadow }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: th.text, marginBottom: 10, fontFamily: FONT }}>{comp.label}</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {comp.paliers.map(function(p, pIdx) {
+                    var isSel = sel === pIdx;
+                    return (
+                      <button key={pIdx} onClick={function() { togglePalier(s.id, exCur.id, comp.id, pIdx); }}
+                        style={{ width: "100%", padding: "12px 14px", borderRadius: th.radiusSm, cursor: "pointer", fontFamily: FONT_B, textAlign: "left", background: isSel ? th.success + "18" : th.surface, border: "1.5px solid " + (isSel ? th.success + "55" : th.border), color: isSel ? th.text : th.textMuted }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 2 }}>{"Palier " + (pIdx + 1)}</div>
+                        <div style={{ fontSize: 13, opacity: 0.85 }}>{p.indice || "—"}</div>
+                        <div style={{ fontFamily: MONO, fontWeight: 700, marginTop: 4, fontSize: 13, color: isSel ? th.success : th.textDim }}>{p.bareme + " pt"}</div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
+
+          {exCur && exCur.type === "paliers" && !isTouch && (
             <div style={{ background: th.card, borderRadius: th.radius, border: "1px solid " + th.border, padding: 10, marginBottom: 6, boxShadow: th.shadow, overflowX: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: FONT_B }}>
                 <thead>
@@ -1145,8 +1208,10 @@ export default function App() {
             </div>
           )}
 
-          {/* Questions (exercice type "items") */}
-          {exCur && (!exCur.type || exCur.type === "items") && exCur.questions.map(function(q) {
+          {/* Questions (exercice type "items") — une seule question à la fois sur tablette/mobile */}
+          {exCur && (!exCur.type || exCur.type === "items") && (function() {
+            var qList = isTouch ? (exCur.questions[qi] ? [exCur.questions[qi]] : []) : exCur.questions;
+            return qList.map(function(q) {
             var sc = questionScore(grades, s.id, q);
             var qr = remarks[remarkKey(s.id, q.id)] || [];
             return (
@@ -1219,37 +1284,52 @@ export default function App() {
                   )}
                   </div>
                 </div>
-              </div>); })}
+              </div>); });
+          })()}
 
-          {/* Bottom nav — navigation par exercice avec wrap vers élève suivant/précédent */}
-          <div style={{ display: "flex", gap: 6, marginTop: 12, position: "sticky", bottom: isMobile ? 64 : 8 }}>
-            <button onClick={function() {
-              if (ei > 0) {
-                setEi(ei - 1);
-              } else if (si > 0) {
-                setSi(si - 1);
-                setEi(exam.exercises.length - 1);
-              }
-              if (mainScrollRef.current) mainScrollRef.current.scrollTop = 0;
-            }} style={{ flex: 1, padding: isMobile ? "16px" : "14px", borderRadius: th.radiusSm, cursor: "pointer", fontFamily: FONT_B, fontSize: isMobile ? 14 : 13, fontWeight: 700, background: th.card, border: "1px solid " + th.border, color: (si === 0 && ei === 0) ? th.textDim : th.text, boxShadow: th.shadow }}>{"◄ Ex. préc."}</button>
-            <button onClick={function() {
-              if (ei < exam.exercises.length - 1) {
-                setEi(ei + 1);
-              } else if (si < students.length - 1) {
-                setSi(si + 1);
-                setEi(0);
-              }
-              if (mainScrollRef.current) mainScrollRef.current.scrollTop = 0;
-            }} style={{ flex: 1, padding: isMobile ? "16px" : "14px", borderRadius: th.radiusSm, cursor: "pointer", fontFamily: FONT_B, fontSize: isMobile ? 14 : 13, fontWeight: 700, background: th.accent, border: "none", color: "#fff", boxShadow: th.shadow }}>{"Ex. suiv. ►"}</button>
-          </div>
+          {/* Bottom nav */}
+          {isTouch ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 12, position: "sticky", bottom: isMobile ? 64 : 8 }}>
+              {listLengthOf(exCur) > 1 && (
+                <div style={{ textAlign: "center", fontSize: 11, fontFamily: FONT_B, color: th.textMuted }}>
+                  {(exCur && exCur.type === "paliers" ? "Compétence " : "Question ") + (qi + 1) + " / " + listLengthOf(exCur)}
+                </div>
+              )}
+              <div style={{ display: "flex", gap: 6 }}>
+                <button onClick={goPrevStep} style={{ flex: 1, padding: isMobile ? "16px" : "14px", borderRadius: th.radiusSm, cursor: "pointer", fontFamily: FONT_B, fontSize: isMobile ? 14 : 13, fontWeight: 700, background: th.card, border: "1px solid " + th.border, color: (si === 0 && ei === 0 && qi === 0) ? th.textDim : th.text, boxShadow: th.shadow }}>{"◄ Précédent"}</button>
+                <button onClick={goNextStep} style={{ flex: 1, padding: isMobile ? "16px" : "14px", borderRadius: th.radiusSm, cursor: "pointer", fontFamily: FONT_B, fontSize: isMobile ? 14 : 13, fontWeight: 700, background: th.accent, border: "none", color: "#fff", boxShadow: th.shadow }}>{"Suivant ►"}</button>
+              </div>
+            </div>
+          ) : (
+            <div style={{ display: "flex", gap: 6, marginTop: 12, position: "sticky", bottom: 8 }}>
+              <button onClick={function() {
+                if (ei > 0) {
+                  setEi(ei - 1); setQi(0);
+                } else if (si > 0) {
+                  setSi(si - 1);
+                  setEi(exam.exercises.length - 1); setQi(0);
+                }
+                if (mainScrollRef.current) mainScrollRef.current.scrollTop = 0;
+              }} style={{ flex: 1, padding: "14px", borderRadius: th.radiusSm, cursor: "pointer", fontFamily: FONT_B, fontSize: 13, fontWeight: 700, background: th.card, border: "1px solid " + th.border, color: (si === 0 && ei === 0) ? th.textDim : th.text, boxShadow: th.shadow }}>{"◄ Ex. préc."}</button>
+              <button onClick={function() {
+                if (ei < exam.exercises.length - 1) {
+                  setEi(ei + 1); setQi(0);
+                } else if (si < students.length - 1) {
+                  setSi(si + 1);
+                  setEi(0); setQi(0);
+                }
+                if (mainScrollRef.current) mainScrollRef.current.scrollTop = 0;
+              }} style={{ flex: 1, padding: "14px", borderRadius: th.radiusSm, cursor: "pointer", fontFamily: FONT_B, fontSize: 13, fontWeight: 700, background: th.accent, border: "none", color: "#fff", boxShadow: th.shadow }}>{"Ex. suiv. ►"}</button>
+            </div>
+          )}
         </div>}
 
         {/* ═══ STATS ═══ */}
         {mode === "stats" && exam && <div style={{ maxWidth: 760, margin: "0 auto" }}>
           <div style={{ display: "flex", gap: 4, marginBottom: 8, flexWrap: "wrap", alignItems: "center" }}>
             <div style={{ flex: 1 }} />
-            {["general", "exercices", "classement"].map(function(t) { return (
-              <button key={t} onClick={function() { setTab(t); }} style={{ padding: "6px 10px", borderRadius: th.radiusSm, cursor: "pointer", fontFamily: FONT_B, fontSize: 11, fontWeight: 600, background: tab === t ? th.accent + "18" : "transparent", border: "1px solid " + (tab === t ? th.accent + "40" : th.border), color: tab === t ? th.accent : th.textMuted }}>{t === "general" ? "Général" : t === "exercices" ? "Exercices" : "Classement"}</button>); })}
+            {["general", "exercices"].map(function(t) { return (
+              <button key={t} onClick={function() { setTab(t); }} style={{ padding: "6px 10px", borderRadius: th.radiusSm, cursor: "pointer", fontFamily: FONT_B, fontSize: 11, fontWeight: 600, background: tab === t ? th.accent + "18" : "transparent", border: "1px solid " + (tab === t ? th.accent + "40" : th.border), color: tab === t ? th.accent : th.textMuted }}>{t === "general" ? "Général" : "Exercices"}</button>); })}
           </div>
 
           {tab === "general" && <div>
@@ -1337,39 +1417,6 @@ export default function App() {
             );
           })}
 
-          {tab === "classement" && (function() {
-            var withNotes = corriges.map(function(ss) { return { student: ss, note100: getNote100(ss.id) }; });
-            var byNote = withNotes.slice().sort(function(a, b) { return b.note100 - a.note100; });
-            var rangMap2 = {}; var rr = 1;
-            byNote.forEach(function(r, i) { if (i > 0 && r.note100 < byNote[i - 1].note100) rr = i + 1; rangMap2[r.student.id] = rr; });
-            var sorted = withNotes.slice().sort(csortMode === "alpha"
-              ? function(a, b) { var na = (a.student.nom + a.student.prenom).toLowerCase(); var nb = (b.student.nom + b.student.prenom).toLowerCase(); return na < nb ? -1 : na > nb ? 1 : 0; }
-              : function(a, b) { return b.note100 - a.note100; });
-            return (
-              <div style={{ background: th.card, borderRadius: th.radius, border: "1px solid " + th.border, padding: 12, boxShadow: th.shadow }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, fontFamily: FONT, flex: 1 }}>{"Classement (" + corriges.length + " él.)"}</div>
-                  {["rang", "alpha"].map(function(m) { return (
-                    <button key={m} onClick={function() { setCsortMode(m); }}
-                      style={{ padding: "3px 9px", borderRadius: 10, cursor: "pointer", fontFamily: FONT_B, fontSize: 10, fontWeight: 600, background: csortMode === m ? th.accent + "18" : "transparent", border: "1px solid " + (csortMode === m ? th.accent + "40" : th.border), color: csortMode === m ? th.accent : th.textMuted }}>
-                      {m === "rang" ? "Par rang" : "A → Z"}
-                    </button>); })}
-                </div>
-                {sorted.map(function(r, i) {
-                  var rang2 = rangMap2[r.student.id];
-                  var exVals = exam.exercises.map(function(ex) { var sc = exerciseScore(grades, notesBrutes, palierGrades, r.student.id, ex); return sc.total > 0 ? sc.earned / sc.total : 0; });
-                  return (
-                    <div key={r.student.id} style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 2px", borderBottom: i < sorted.length - 1 ? "1px solid " + th.border : "none" }}>
-                      <span style={{ fontFamily: MONO, fontSize: 10, color: th.textDim, minWidth: 18, textAlign: "right" }}>{rang2}</span>
-                      <MiniRadarEx values={exVals} size={30} dark={dark} />
-                      <span style={{ flex: 1, fontSize: 11, fontWeight: 500, fontFamily: FONT_B }}>{r.student.prenom} <span style={{ fontVariant: "small-caps" }}>{r.student.nom}</span></span>
-                      <span style={{ fontFamily: MONO, fontSize: 12, fontWeight: 700, minWidth: 40, textAlign: "right", color: r.note100 < 40 ? th.danger : r.note100 < 60 ? th.warning : th.success }}>{r.note100.toFixed(1)}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            );
-          })()}
         </div>}
 
         {/* ═══ VUE D'ENSEMBLE ═══ */}
@@ -1386,7 +1433,7 @@ export default function App() {
               FONT={FONT}
               FONT_B={FONT_B}
               MONO={MONO}
-              onNavigate={function(studentIdx, exIdx) { setSi(studentIdx); setEi(exIdx); setMode("correct"); }}
+              onNavigate={function(studentIdx, exIdx) { setSi(studentIdx); setEi(exIdx); setQi(0); setMode("correct"); }}
             />
           );
         })()}

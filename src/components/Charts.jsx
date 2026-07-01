@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════
-// Composants visuels : MiniRadarEx, Histo, PBar
+// Composants visuels : Histo, PBar
 // ═══════════════════════════════════════════════════════════════════
 
 import { clamp } from "../utils/calculs";
@@ -7,22 +7,6 @@ import { FONT_BODY, FONT_MONO } from "../config/theme";
 
 const FONT_B = FONT_BODY;
 const MONO = FONT_MONO;
-
-export function MiniRadarEx({ values, size = 36, dark = false }) {
-  const n = values.length;
-  if (n < 3) return null;
-  const cx = size / 2, cy = size / 2, r = size * 0.38;
-  const th = dark ? { accent: "#5b9bd5", success: "#7bc67e" } : { accent: "#2855a0", success: "#2a7a3a" };
-  const angles = values.map((_, i) => (Math.PI * 2 * i) / n - Math.PI / 2);
-  const pts = values.map((v, i) => `${cx + r * v * Math.cos(angles[i])},${cy + r * v * Math.sin(angles[i])}`).join(" ");
-  const outline = values.map((_, i) => `${cx + r * Math.cos(angles[i])},${cy + r * Math.sin(angles[i])}`).join(" ");
-  return (
-    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-      <polygon points={outline} fill="none" stroke={dark ? "#4a4438" : "#e0d8cc"} strokeWidth={0.5} />
-      <polygon points={pts} fill={th.success + "25"} stroke={th.success} strokeWidth={1} />
-    </svg>
-  );
-}
 
 // ═══════════════════════════════════════════════════════════════════
 // HISTOGRAM / PROGRESS BAR
