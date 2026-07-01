@@ -2,8 +2,8 @@
   "name": "check-app-lite",
   "version": "1.0.0",
   "private": true,
-  "homepage": "https://ProfFranco.github.io/check-app",
-  "description": "C.H.E.C.K. — Application de correction de copies pour enseignants",
+  "homepage": "https://ProfFranco.github.io/check-lite",
+  "description": "C.H.E.C.K.-lite — Application de correction de copies (version allégée, brevet des collèges)",
   "scripts": {
     "start": "react-scripts start",
     "build": "react-scripts build",
