@@ -1,0 +1,178 @@
+## v 1.4 - 3 mai 2023
+
+### Notes privées 
+- Introduction d'une fonctionnalité de notes privées, associées à chaque étudiant, complétable lors d'un DS; ces notes ne sont pas exportées, et peuvent être utilisées pour se rappeler d'éléments/d'erreurs pertinents perçus dans une copie
+- Une section "perles" a également été introduite, sur le même principe. Pour rire un peu !
+
+### Page d'accueil
+- Une page d'accueil existe désormais dans CHECK : accessible en cliquant sur le logo, elle affiche les stats du dernier DS, et l'historique des précédentes corrections.
+- Et une perle au hasard ;-)
+
+### StarMap
+- Pour agrémenter la correction de copie, les résultats des étudiants sont interprétés pour créer une carte du ciel, avec constellations. Une manière plaisante de visualiser les données, mais surtout là pour donner envie de corriger ! Accessible à l'export HTML, et pendant la correction sur pression  de la touche "S".
+
+## v 1.3 — 28 avril 2026
+
+### Synchronisation GitHub introduite
+- Si un dépôt GitHub est indiqué, l'état de la correction **se synchronise automatiquement**, sans export manuel nécessaire. Les conflits sont gérés.
+
+### Réglages globaux/spécifiques aux DS
+- Clarifications dans l'interface "Réglages" des réglages spécifiques à chaque devoir et des réglages globaux
+- Possibilité de changer les réglages par défaut
+
+### Import depuis un autre profil
+- Lors de la création d'un profil, **possibilité d'importer des réglages** ou des listes d'élèves pré-existants
+
+### Correctifs variés
+
+## v 1.2 — avril 2026
+
+### Correctifs
+
+- **Questions pièges ⚠️ — calcul corrigé dans les rapports HTML** : le rapport individuel comparait le score de l'élève au seuil piège (au lieu du taux de réussite de la classe) → fausse alerte ⚠️ pour les élèves ayant raté une question traitée par la classe. L'histogramme par exercice manquait aussi la condition tauxTraitement ≥ 50%.
+- **Onglet Résultats — iframe stabilisée** : l'aperçu HTML disparaissait à chaque changement d'onglet (iframe détruite par le mécanisme `key` sur `<main>`). Le panneau Résultats est maintenant monté en permanence et masqué/affiché par CSS (`display: none/flex`).
+- **Score avec bonus exercice complet 🏆** : `studentTotalWeighted` n'acceptait pas `bonusConfig` → score incorrect dans l'onglet Résultats si le bonus était activé.
+- **Dépendances `useMemo` incomplètes** : `htmlSrc` n'incluait pas `seuilPiege` ni `ft` → le rapport HTML ne se régénérait pas lors d'un changement de seuil piège ou de preset.
+- **Progression inter-DS** : `progressionStudentId` n'était pas réinitialisé au changement de profil → crash si l'élève n'existait pas dans le nouveau profil.
+- **AudioRecorder** : détection MIME inversée (Safari utilisait webm au lieu de mp4), fuite mémoire (URL Blob non révoquée au démontage), double-enregistrement possible, badge REC statique (keyframe `pulse` non définie).
+- **Entête CSV compétences** : les colonnes utilisaient l'`id` de compétence au lieu du `label`.
+- **Stats — % questions difficiles** : toujours noir (typo `qs.diff` au lieu de `qs.difficile`).
+- **SettingsModal** : appel `saveDB` parasite sans profileId (écriture silencieuse dans la mauvaise base).
+
+---
+
+## v 1.1 — avril 2026
+
+### Guide d'utilisation
+- Tutoriel remanié : 8 étapes (ajout du choix de preset et de la structure enrichie avec bonus 🏆 / 🎁)
+- Référence complète mise à jour : fonctionnalités par DS (presets ♙♜♔♞), bonus exercice complet, questions pièges ⚠️, progression inter-DS, rapport de classe HTML
+- Simulations visuelles enrichies dans chaque section
+
+---
+
+## v 1.0 — avril 2026
+
+### Architecture
+- Découpage du composant principal en modules indépendants (`db.js`, `Charts.jsx`, `AudioRecorder.jsx`, `DebugModal.jsx`, `SettingsModal.jsx`, `ExportTab.jsx`) — App.jsx allégé de 46 %
+- Couverture de tests unitaires : 45 tests sur les fonctions de calcul (`calculs.test.js`)
+
+### Fonctionnalités par devoir
+- Sélecteur de preset ♙ Simple / ♜ Standard / ♔ Complet / ♞ Personnalisé
+- Chaque devoir porte ses propres fonctionnalités : compétences A/N/R/V, coefficients, questions bonus 🎁, bonus exercice complet 🏆, malus automatique, questions pièges ⚠️
+- L'interface s'adapte dynamiquement aux fonctionnalités activées
+
+### Progression inter-DS
+- Sous-onglet **Progression** dans les Stats : courbe note élève + moyenne classe par DS
+- Radar multi-DS (basculement automatique vers courbe au-delà de 8 DS)
+- Toggle brut / normalisé
+
+### Bonus exercice complet 🏆
+- Déclenché si toutes les questions non-bonus sont traitées et le score dépasse le seuil
+- Configurable : mode fixe ou pourcentage, valeur du bonus, seuil de déclenchement
+
+### Questions pièges ⚠️
+- Détection automatique : taux de traitement ≥ 50 % mais taux de réussite sous le seuil
+- Marquage dans les stats, les exports HTML et LaTeX
+
+### Rapport de classe HTML
+- Nouveau rapport de classe en format paysage A4, conçu pour la projection
+- Blocs configurables : commentaire DS, statistiques globales, distribution des notes, compétences (barres horizontales), détail par exercice (histogrammes)
+- Aperçu live dans l'onglet Résultats via l'option « 📊 Toute la classe »
+- Aucun nom d'élève dans le rapport
+
+### Correctifs
+- Aperçu HTML dans l'onglet Résultats : stabilisation de l'iframe (ne se recharge plus à chaque navigation)
+- Nom des DS dans les bulles de navigation corrigé
+- Coloration des notes dans l'onglet Correction corrigée
+
+---
+
+## v 0.91
+
+### Correctifs
+- Toilettage du code et découpage en plusieurs fichiers pour une meilleure lisibilité
+- Variables mal nommées remplacées
+- Dissociation GitHub possible
+
+## v 0.9 — 9 avril 2026
+
+### Nouvelle section : vue d'ensemble
+- Ajout d'une section permettant de visualiser en un clin d'œil les résultats des étudiants sous forme de tableau cliquable
+
+### Enregistrements audio
+- Possibilité de générer des liens URL vers les enregistrements générés, si l'utilisateur donne la racine des liens en question
+
+### Interface
+- Le DS actuel devient cliquable pour sélectionner à la volée le DS analysé
+
+### Correctifs
+- Erreur de coloration des notes dans l'onglet "Correction"
+- Nom des DS dans les bulles de navigation cohérent
+- Mise à jour du fichier d'aide
+
+## v 0.80 — avril 2026
+
+### Section d'aide
+- Section complètement remaniée, pour l'instant rédigée par IA
+- Apparition d'un tutoriel
+
+### Interface
+- Ajout de l'onglet "Etablissement" pour paramétrer le nom de l'établissement, de la classe, des copies corrigées
+
+### Correctifs
+- Corrections nombreuses dans le code après revue
+- Fichier de test des fonctions de calculs
+
+## v 0.72 — avril 2026
+
+### Distribution & infrastructure
+- Déploiement automatique sur GitHub Pages via GitHub Actions
+- Licence MIT ajoutée (`LICENSE`)
+- `README.md` complet : guide d'installation en 3 étapes pour les utilisateurs (zéro terminal), documentation technique pour les développeurs, note RGPD
+
+### Synchronisation inter-appareils ☁️
+- Nouvelle section **Synchronisation** dans l'onglet Export : sauvegarde et restauration de l'état complet via un dépôt GitHub privé
+- Configuration du PAT et du dépôt dans Réglages > Export > Synchronisation GitHub
+- Les données restent dans votre propre dépôt privé ; elles ne transitent que par l'API GitHub
+
+### Interface
+- **Menu ⋯** dans le header (toujours visible, à droite) : regroupe le zoom, le sélecteur de thème et l'accès À propos
+- Sélecteur de thème : 3 boutons icônes distincts (☀️ 🌙 🎨) avec indication de l'actif, dans le menu ⋯
+- Boutons 💾 / 📂 toujours visibles (y compris sur mobile)
+
+### Correctifs
+- Onglet Résultats : l'aperçu HTML ne disparaît plus de façon intempestive
+- Onglet Réglages : erreurs corrigées dans le menu des normalisations
+
+## v 0.7.1
+
+### 🎙️ Commentaires audio par question
+- Nouveau bouton **🎙️** dans le bandeau de chaque question (onglet Correction)
+- Enregistrement via le microphone de l'appareil, directement dans l'interface
+- Widget inline : Enregistrer · Arrêter · Réécouter · Télécharger
+- Fichier nommé automatiquement : `DS_NOM_Exercice_Question.mp4` (ou `.webm`)
+- Compatible Safari Mac, Chrome/Chromium, iOS Safari
+- Aucune persistance : le fichier audio n'est pas stocké dans l'application
+
+## v 0.7 — avril 2026
+
+### Multi-profils
+- Sélecteur de profil dans le header (👤)
+- Isolation totale par profil (bases IndexedDB séparées)
+- Créer, renommer, supprimer des profils
+- Migration automatique des données existantes vers "Profil 1"
+
+### Nouveautés récentes dans le modal À propos
+- Ce journal des mises à jour 📋
+
+## v 0.6 — avril 2026
+
+### Interface
+- Thème "Jeune" (lavande, Nunito, couleurs vives)
+- Groupes pédagogiques éditables dans les Réglages
+- Onglet Aide avec guide complet
+- Modal "À propos" (ℹ️)
+
+### Export
+- Refonte de l'onglet Export (3 sections déroulables)
+- Réordonnancement des exercices et questions (↑/↓)
