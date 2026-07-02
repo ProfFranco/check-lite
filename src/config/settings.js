@@ -12,7 +12,7 @@ export const APP_VERSION = "1.0-lite";
 // icon  : emoji affiché à côté du texte
 // La logique de malus/bonus associée à chaque remarque est câblée
 // en dur dans utils/calculs.js (remarquesAjustement) :
-//   - "r" Rédaction  : -1 pt/case, plafonné à -2 pts sur la copie
+//   - "r" Rédaction  : par palier — 1 ou 2 cases cochées = -1 pt, 3+ = -2 pts sur la copie
 //   - "g" Guillemets : -1 pt si cochée ≥ 3 fois sur la copie
 //   - "b" Bonus      : +0,5 ou +1 pt/case au choix (menu déroulant),
 //                      plafonné à +4 pts sur la copie

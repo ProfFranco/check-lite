@@ -81,10 +81,12 @@ Cochage d'items, case "traitée (0 pt)", bouton tout cocher/décocher si ≥ 2 i
 ### `"brut"` — Note brute (ex. dictée)
 
 ```other
-{ id, title, type: "brut", bareme: number }
+{ id, title, type: "brut", bareme: number, consigne?: string }
 ```
 
 Pas de questions/items : l'enseignant saisit directement une note, bornée `[0, bareme]`. Stockage : `notesBrutes[studentId__exerciseId] = number`.
+
+`consigne` (round 6) est un champ texte optionnel, saisi en Préparation (`<textarea>` sous le barème) et affiché en lecture seule sous le champ de note en Correction (`whiteSpace: pre-wrap`, retours à la ligne conservés) — utile pour coller le texte d'une dictée. Simple propriété de l'exercice (dans `exam.exercises`), donc déjà couverte par `buildAppState`/persistance sans rien ajouter ailleurs.
 
 ### `"paliers"` — Par Paliers (grilles de compétences du brevet)
 
@@ -118,7 +120,7 @@ Trois remarques **non configurables** (`REMARQUES_FIXES` dans `config/settings.j
 
 | Remarque | Effet |
 |---|---|
-| ✏️ Rédaction | −1 pt par case cochée, plafonné à **−2 pts** sur la copie |
+| ✏️ Rédaction | **par palier** (round 6) : 1 ou 2 cases cochées = **−1 pt**, 3 cases ou plus = **−2 pts** sur la copie (pas de progression linéaire au-delà) |
 | “” Guillemets | −1 pt **si cochée ≥ 3 fois** sur la copie (flat, non cumulatif au-delà) |
 | 🎁 Bonus | **+0,5 ou +1 pt** par case, au choix via un petit menu déroulant qui s'ouvre au clic (un seul niveau actif à la fois par question) ; plafonné à **+4 pts** sur la copie |
 
@@ -189,11 +191,13 @@ Meta-base `check-app-profiles` séparée (multi-profils), inchangée par rapport
 
 ## Déploiement — GitHub Pages
 
-- Dépôt prévu : `github.com/ProfFranco/check-lite` (public).
-- `.github/workflows/deploy.yml` : `npm ci` → `npm run build` (`PUBLIC_URL=/check-lite`) → `peaceiris/actions-gh-pages@v4` publie `build/` sur la branche `gh-pages` à chaque push sur `main`.
+- **En ligne** : dépôt public [`github.com/ProfFranco/check-lite`](https://github.com/ProfFranco/check-lite), site publié sur [`ProfFranco.github.io/check-lite`](https://ProfFranco.github.io/check-lite) (Pages activé sur la branche `gh-pages`, racine).
+- `.github/workflows/deploy.yml` : `npm install` (⚠️ pas `npm ci` — voir piège dédié ci-dessous) → `npm run build` (`PUBLIC_URL=/check-lite`) → `peaceiris/actions-gh-pages@v4` publie `build/` sur la branche `gh-pages` (`force_orphan: true`) à chaque push sur `main`.
 - `package.json.homepage` : `https://ProfFranco.github.io/check-lite`.
 - Alternative manuelle : `npm run deploy` (script `gh-pages -d build` déjà présent, hérité de CHECK).
 - Le token GitHub utilisé pour créer le dépôt et pousser (PAT classique, scopes `repo` + `workflow`) est distinct du `GITHUB_TOKEN` automatique utilisé par le workflow pour publier sur `gh-pages`.
+
+**Piège `npm ci` vs `npm install`** : le premier essai de déploiement a échoué en CI (`npm ci` → `EUSAGE`, lock file jugé désynchronisé) alors que `npm ci` réussissait en local avec le même `package-lock.json` — écart lié à la version de npm du runner GitHub Actions (`actions/setup-node@v4`, Node 20) vs. la version locale. Le workflow utilise donc `npm install`, moins strict, plutôt que de chercher à figer une version de npm identique des deux côtés.
 
 ---
 
@@ -204,6 +208,7 @@ Fork créé à partir de `check-app` (CHECK v1.42) en juillet 2026 :
 2. Correctifs : bug `updPath`, suppression Classement/Aide/À propos, navigation tablette/mobile pas-à-pas.
 3. Bonus/malus manuel par compétence (paliers), suppression Aide/À propos, doc de référence.
 4. **Retrait complet de la note /100** : seule la note brute totale fait foi (voir section dédiée) ; carte "Moyenne générale" retirée de l'Accueil.
-5. **Remarques Rédaction/Guillemets/Bonus restreintes aux exercices "items"** (retirées de "brut"/"paliers") ; Bonus à deux niveaux +0,5/+1 via menu déroulant (positionné en `fixed`, voir piège UI dédié) ; plafonds affichés distinctement par catégorie dans le héros ; totaux d'exercice incluant désormais les remarques de leurs propres questions (`exerciseScoreWithRemarks`) ; réintroduction du sous-onglet Stats › Classement (sans radar).
+5. **Remarques Rédaction/Guillemets/Bonus restreintes aux exercices "items"** (retirées de "brut"/"paliers") ; Bonus à deux niveaux +0,5/+1 via menu déroulant (positionné en `fixed`, voir piège UI dédié) ; plafonds affichés distinctement par catégorie dans le héros ; totaux d'exercice incluant désormais les remarques de leurs propres questions (`exerciseScoreWithRemarks`) ; réintroduction du sous-onglet Stats › Classement (sans radar). Mise en ligne effective sur GitHub Pages (voir section dédiée).
+6. **Rédaction en palier** (1-2 cases = -1 pt, 3+ = -2 pts, au lieu d'un plafond linéaire) ; ajout d'une **consigne texte optionnelle** sur les exercices "brut" (ex. texte de dictée), saisie en Préparation et affichée en Correction sous le champ de note.
 
 Pas de journal de session détaillé comme `CONTEXTE_CHECK.md` (pas nécessaire à ce stade — projet plus petit, un seul contributeur). À réévaluer si le projet grandit.

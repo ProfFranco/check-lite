@@ -132,7 +132,7 @@ export function currentBonusValue(remarks, studentId, targetId) {
 
 /**
  * Ajustement en points dû aux remarques fixes pour un élève :
- *   - "r" Rédaction  : -1 pt/case, plafonné à -2 pts sur la copie
+ *   - "r" Rédaction  : par palier — 1 ou 2 cases cochées = -1 pt, 3 cases ou plus = -2 pts sur la copie
  *   - "g" Guillemets : -1 pt si cochée ≥ 3 fois sur la copie
  *   - "b" Bonus      : +0,5 ou +1 pt/case (au choix), plafonné à +4 pts sur la copie
  * Retourne un nombre (peut être négatif) à ajouter au total brut.
@@ -145,9 +145,9 @@ export function remarquesAjustement(remarks, studentId, exam) {
  * Détail par catégorie de l'ajustement dû aux remarques fixes pour un élève,
  * avec indication du plafonnement (pour affichage distinct dans le héros) :
  *   - bonus            : points gagnés grâce à "Bonus" (0 à 4)
- *   - malusRedaction   : points perdus à cause de "Rédaction" (0 à 2)
+ *   - malusRedaction   : points perdus à cause de "Rédaction" (0, 1 ou 2, par palier)
  *   - malusGuillemets  : 0 ou 1 (fixe, dès 3 cases "Guillemets" cochées)
- *   - bonusCapped/redactionCapped : true si le plafond est atteint ou dépassé
+ *   - bonusCapped/redactionCapped : true si le plafond/palier max est atteint
  *
  * `exam` peut être un exercice unique enveloppé en { exercises: [ex] } pour
  * n'agréger que les remarques de cet exercice (voir exerciseScoreWithRemarks).
@@ -164,14 +164,14 @@ export function remarquesBreakdown(remarks, studentId, exam) {
       else sumB += bonusIdValue(rid);
     });
   });
-  const malusRedaction = Math.min(2, countR);
+  const malusRedaction = countR === 0 ? 0 : (countR <= 2 ? 1 : 2);
   const malusGuillemets = countG >= 3 ? 1 : 0;
   const bonus = Math.min(4, sumB);
   return {
     countR, countG, sumB,
     bonus, malusRedaction, malusGuillemets,
     bonusCapped: sumB > 4,
-    redactionCapped: countR > 2,
+    redactionCapped: countR >= 3,
     total: bonus - malusRedaction - malusGuillemets,
   };
 }

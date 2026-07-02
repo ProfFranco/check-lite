@@ -469,6 +469,11 @@ export default function App() {
     n.exercises[exIdx].bareme = parseFloat(val) || 0;
     updateExam(n);
   }
+  function updateConsigne(exIdx, val) {
+    var n = deepClone(exam);
+    n.exercises[exIdx].consigne = val;
+    updateExam(n);
+  }
   function addQuestion(exIdx) {
     var n = deepClone(exam);
     n.exercises[exIdx].questions.push({ id: uid(), label: "" + (n.exercises[exIdx].questions.length + 1), items: [{ id: uid(), label: "Item 1", points: 1 }] });
@@ -984,10 +989,16 @@ export default function App() {
                       })}
                       <button onClick={function() { addQuestion(exIdx); }} style={{ background: th.accentBg, border: "1px dashed " + th.accent + "33", color: th.accent, borderRadius: th.radiusSm, padding: "4px 8px", cursor: "pointer", fontSize: 11, fontWeight: 600, fontFamily: FONT_B, width: "100%" }}>+ Question</button>
                     </div>}
-                    {!isCol && exType === "brut" && <div style={{ padding: "10px 10px 12px", display: "flex", alignItems: "center", gap: 8 }}>
-                      <span style={{ fontSize: 11, color: th.textMuted, fontFamily: FONT_B }}>{"Barème (points max) :"}</span>
-                      <input type="number" min="0" step="0.5" value={ex.bareme !== undefined ? ex.bareme : 20} onChange={function(e) { updateBareme(exIdx, e.target.value); }} style={{ ...inp, width: 70, fontSize: 12, fontFamily: MONO, textAlign: "center", color: th.accent }} />
-                      <span style={{ fontSize: 10, color: th.textDim, fontFamily: FONT_B }}>{"La note sera saisie directement par élève en Correction (ex : dictée)."}</span>
+                    {!isCol && exType === "brut" && <div style={{ padding: "10px 10px 12px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                        <span style={{ fontSize: 11, color: th.textMuted, fontFamily: FONT_B }}>{"Barème (points max) :"}</span>
+                        <input type="number" min="0" step="0.5" value={ex.bareme !== undefined ? ex.bareme : 20} onChange={function(e) { updateBareme(exIdx, e.target.value); }} style={{ ...inp, width: 70, fontSize: 12, fontFamily: MONO, textAlign: "center", color: th.accent }} />
+                        <span style={{ fontSize: 10, color: th.textDim, fontFamily: FONT_B }}>{"La note sera saisie directement par élève en Correction (ex : dictée)."}</span>
+                      </div>
+                      <div>
+                        <span style={{ fontSize: 11, color: th.textMuted, fontFamily: FONT_B, display: "block", marginBottom: 4 }}>{"Consigne / texte (affiché en Correction, ex : texte de la dictée) :"}</span>
+                        <textarea value={ex.consigne || ""} onChange={function(e) { updateConsigne(exIdx, e.target.value); }} rows={4} placeholder="Texte optionnel…" style={{ ...inp, width: "100%", boxSizing: "border-box", fontSize: 12, resize: "vertical" }} />
+                      </div>
                     </div>}
                     {!isCol && exType === "paliers" && <div style={{ padding: "8px 10px 10px" }}>
                       {(ex.competences || []).map(function(comp, cIdx) {
@@ -1155,13 +1166,20 @@ export default function App() {
 
           {/* Exercice type "Note brute" */}
           {exCur && exCur.type === "brut" && (
-            <div style={{ background: th.card, borderRadius: th.radius, border: "1px solid " + th.border, padding: 16, marginBottom: 6, boxShadow: th.shadow, display: "flex", alignItems: "center", gap: 10 }}>
-              <span style={{ fontSize: 13, fontFamily: FONT_B, color: th.textMuted }}>{"Note :"}</span>
-              <input type="number" min="0" max={exCur.bareme} step="0.5"
-                value={notesBrutes[gradeKey(s.id, exCur.id)] !== undefined ? notesBrutes[gradeKey(s.id, exCur.id)] : ""}
-                onChange={function(e) { setNoteBrute(s.id, exCur.id, e.target.value); }}
-                style={{ ...inp, width: 70, fontSize: 16, fontFamily: MONO, textAlign: "center", color: th.accent }} />
-              <span style={{ fontSize: 13, fontFamily: MONO, color: th.textDim }}>{"/ " + (exCur.bareme || 0)}</span>
+            <div style={{ background: th.card, borderRadius: th.radius, border: "1px solid " + th.border, padding: 16, marginBottom: 6, boxShadow: th.shadow }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span style={{ fontSize: 13, fontFamily: FONT_B, color: th.textMuted }}>{"Note :"}</span>
+                <input type="number" min="0" max={exCur.bareme} step="0.5"
+                  value={notesBrutes[gradeKey(s.id, exCur.id)] !== undefined ? notesBrutes[gradeKey(s.id, exCur.id)] : ""}
+                  onChange={function(e) { setNoteBrute(s.id, exCur.id, e.target.value); }}
+                  style={{ ...inp, width: 70, fontSize: 16, fontFamily: MONO, textAlign: "center", color: th.accent }} />
+                <span style={{ fontSize: 13, fontFamily: MONO, color: th.textDim }}>{"/ " + (exCur.bareme || 0)}</span>
+              </div>
+              {exCur.consigne && (
+                <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid " + th.border, fontSize: 13, fontFamily: FONT_B, color: th.text, whiteSpace: "pre-wrap", lineHeight: 1.5 }}>
+                  {exCur.consigne}
+                </div>
+              )}
             </div>
           )}
 
